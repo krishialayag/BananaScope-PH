@@ -1,0 +1,821 @@
+"""
+BananaScope PH: Philippine Banana Production Analytics (2010–2026)
+-------------------------------------------------------------------
+Main Interactive Web Application & Advanced Analytics Engine
+Built with Streamlit & Plotly Express.
+
+Developed for Fundamentals of Data Analytics
+Leuteboro National High School (DepEd MIMAROPA)
+"""
+
+import os
+import re
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import streamlit as st
+
+# Import Advanced Analytics Engine
+from analytics_engine import (
+    compute_yoy_growth,
+    calculate_cagr,
+    compute_trend_models,
+    detect_statistical_anomalies,
+    run_time_series_forecast
+)
+
+# -----------------------------------------------------------------------------
+# 1. PAGE CONFIGURATION & AGRICULTURAL GREEN/WHITE STYLING
+# -----------------------------------------------------------------------------
+st.set_page_config(
+    page_title="BananaScope PH | Advanced Agricultural Analytics",
+    page_icon="🍌",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Custom CSS styling
+st.markdown("""
+<style>
+    .main {
+        background-color: #f8faf8;
+        font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+    
+    /* Header Box */
+    .header-box {
+        background: linear-gradient(135deg, #1b4332 0%, #2d6a4f 100%);
+        color: white;
+        padding: 24px 30px;
+        border-radius: 12px;
+        margin-bottom: 22px;
+        box-shadow: 0 4px 15px rgba(27, 67, 50, 0.15);
+    }
+    .header-box h1 {
+        color: #ffffff;
+        font-size: 2.2rem;
+        font-weight: 700;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .header-box p {
+        color: #d8f3dc;
+        font-size: 1.05rem;
+        margin: 6px 0 0 0;
+    }
+    .badge-tag {
+        display: inline-block;
+        background-color: #52b788;
+        color: #081c15;
+        font-size: 0.8rem;
+        font-weight: 700;
+        padding: 3px 10px;
+        border-radius: 20px;
+        margin-top: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    /* KPI Summary Cards */
+    .metric-card {
+        background-color: #ffffff;
+        border: 1px solid #d8f3dc;
+        border-left: 5px solid #2d6a4f;
+        border-radius: 10px;
+        padding: 16px 20px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        margin-bottom: 15px;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .metric-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(45, 106, 79, 0.12);
+    }
+    .metric-label {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #555555;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 4px;
+    }
+    .metric-value {
+        font-size: 1.65rem;
+        font-weight: 800;
+        color: #1b4332;
+        margin: 0;
+    }
+    .metric-sub {
+        font-size: 0.8rem;
+        color: #52b788;
+        margin-top: 4px;
+        font-weight: 600;
+    }
+
+    /* Callout & Insights Cards */
+    .insights-card {
+        background-color: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        border-left: 5px solid #16a34a;
+        border-radius: 10px;
+        padding: 18px 22px;
+        margin: 15px 0 25px 0;
+    }
+    .insights-title {
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: #166534;
+        margin-bottom: 6px;
+    }
+    .insights-body {
+        font-size: 0.95rem;
+        color: #14532d;
+        line-height: 1.6;
+    }
+
+    .warning-banner {
+        background-color: #fffbeb;
+        border: 1px solid #fde68a;
+        border-left: 5px solid #d97706;
+        border-radius: 8px;
+        padding: 14px 18px;
+        margin-bottom: 18px;
+        color: #92400e;
+        font-size: 0.92rem;
+    }
+
+    .section-title {
+        color: #1b4332;
+        font-size: 1.3rem;
+        font-weight: 700;
+        border-bottom: 2px solid #d8f3dc;
+        padding-bottom: 8px;
+        margin: 20px 0 15px 0;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
+# -----------------------------------------------------------------------------
+# 2. DATA INGESTION & CACHING
+# -----------------------------------------------------------------------------
+@st.cache_data
+def load_dataset():
+    """Loads and standardizes the cleaned dataset."""
+    possible_paths = [
+        "outputs/cleaned_banana_data.csv",
+        "cleaned_banana_data.csv",
+        "data/cleaned_banana_data.csv"
+    ]
+    for path in possible_paths:
+        if os.path.exists(path):
+            df = pd.read_csv(path)
+            df['Year'] = df['Year'].astype(int)
+            df['Volume_MT'] = pd.to_numeric(df['Volume_MT'], errors='coerce')
+            return df
+            
+    st.error("Cleaned dataset not found! Please run `src/data_cleaning.py` first.")
+    st.stop()
+
+df = load_dataset()
+
+
+# -----------------------------------------------------------------------------
+# 3. SIDEBAR CONTROLS & INTERACTIVE FILTERS
+# -----------------------------------------------------------------------------
+with st.sidebar:
+    st.image("https://cdn-icons-png.flaticon.com/512/2909/2909768.png", width=70)
+    st.markdown("### **BananaScope PH Controls**")
+    st.caption("Interactive multi-attribute agricultural surveillance filters.")
+
+    # 1. Year Range Filter
+    min_year = int(df['Year'].min())
+    max_year = int(df['Year'].max())
+    selected_years = st.slider(
+        "📅 **Select Year Horizon:**",
+        min_value=min_year,
+        max_value=max_year,
+        value=(2010, min(2024, max_year)),
+        step=1
+    )
+
+    # 2. Measurement Frequency
+    period_options = ["Annual (Recommended)", "Quarterly (Q1–Q4)", "Semester (S1–S2)"]
+    selected_period_type = st.radio(
+        "⏱️ **Reporting Frequency:**",
+        options=period_options,
+        index=0,
+        help="Annual totals prevent double-counting. Choose Quarterly to inspect intra-annual cycles."
+    )
+
+    quarter_filter = "All"
+    if selected_period_type == "Quarterly (Q1–Q4)":
+        quarter_filter = st.selectbox("Select Specific Quarter:", ["All", "Q1", "Q2", "Q3", "Q4"])
+
+    st.markdown("---")
+
+    # 3. Banana Variety Scope
+    all_varieties = sorted(df['Crop'].unique().tolist())
+    variety_mode = st.radio(
+        "🍌 **Cultivar Scope:**",
+        ["Total Banana (Aggregated)", "Specific Cultivars Breakdown", "Custom Selection"],
+        index=0
+    )
+
+    if variety_mode == "Total Banana (Aggregated)":
+        selected_varieties = ["Banana (Total)"]
+    elif variety_mode == "Specific Cultivars Breakdown":
+        selected_varieties = [v for v in all_varieties if v != "Banana (Total)"]
+    else:
+        selected_varieties = st.multiselect(
+            "Select Banana Varieties:",
+            options=all_varieties,
+            default=["Banana (Total)"]
+        )
+        if not selected_varieties:
+            selected_varieties = ["Banana (Total)"]
+
+    st.markdown("---")
+
+    # 4. Regional Filter
+    available_regions = sorted(df[df['Hierarchy_Level'] == 'Regional']['Region'].unique().tolist())
+    all_regions_opt = "All Administrative Regions (National Scope)"
+    region_options = [all_regions_opt] + available_regions
+
+    selected_region = st.selectbox(
+        "🗺️ **Select Region:**",
+        options=region_options,
+        index=0
+    )
+
+    # 5. Cascading Provincial Filter
+    if selected_region == all_regions_opt:
+        available_provinces = sorted(df[df['Hierarchy_Level'].isin(['Provincial', 'City'])]['Province_City'].unique().tolist())
+    else:
+        available_provinces = sorted(df[(df['Region'] == selected_region) & 
+                                        (df['Hierarchy_Level'].isin(['Provincial', 'City']))]['Province_City'].unique().tolist())
+
+    all_prov_opt = "All Provinces / Cities"
+    province_options = [all_prov_opt] + available_provinces
+
+    selected_province = st.selectbox(
+        "📍 **Select Province / City:**",
+        options=province_options,
+        index=0
+    )
+
+    st.markdown("---")
+    st.caption("🏫 *Leuteboro NHS — Data Analytics (2026)*")
+    st.caption("📊 *Supervised by Sir Aldrin D. Magtibay*")
+
+
+# -----------------------------------------------------------------------------
+# 4. FILTERING LOGIC
+# -----------------------------------------------------------------------------
+filtered_df = df[(df['Year'] >= selected_years[0]) & (df['Year'] <= selected_years[1])].copy()
+
+# Period Type Filter
+if selected_period_type == "Annual (Recommended)":
+    filtered_df = filtered_df[filtered_df['Period_Type'] == 'Annual'].copy()
+elif selected_period_type == "Quarterly (Q1–Q4)":
+    filtered_df = filtered_df[filtered_df['Period_Type'] == 'Quarterly'].copy()
+    if quarter_filter != "All":
+        filtered_df = filtered_df[filtered_df['Period'] == quarter_filter].copy()
+elif selected_period_type == "Semester (S1–S2)":
+    filtered_df = filtered_df[filtered_df['Period_Type'] == 'Semester'].copy()
+
+# Cultivar Filter
+filtered_df = filtered_df[filtered_df['Crop'].isin(selected_varieties)].copy()
+
+# Geographic Hierarchy Routing
+if selected_province != all_prov_opt:
+    active_df = filtered_df[filtered_df['Province_City'] == selected_province].copy()
+    geo_label = selected_province
+    geo_level = "Provincial"
+elif selected_region != all_regions_opt:
+    active_df = filtered_df[(filtered_df['Region'] == selected_region) & 
+                            (filtered_df['Hierarchy_Level'] == 'Regional')].copy()
+    geo_label = selected_region
+    geo_level = "Regional"
+else:
+    active_df = filtered_df[filtered_df['Hierarchy_Level'] == 'National'].copy()
+    geo_label = "Philippines (National Aggregate)"
+    geo_level = "National"
+
+
+# -----------------------------------------------------------------------------
+# 5. DASHBOARD HEADER
+# -----------------------------------------------------------------------------
+st.markdown("""
+<div class="header-box">
+    <h1>🍌 BananaScope PH</h1>
+    <p>Automated Regional Surveillance and Production Analytics Dashboard for Philippine Banana Varieties (2010–2026)</p>
+    <span class="badge-tag">Fundamentals of Data Analytics • Advanced Statistical Engine • Leuteboro NHS</span>
+</div>
+""", unsafe_allow_html=True)
+
+
+# -----------------------------------------------------------------------------
+# 6. KPI SUMMARY CARDS
+# -----------------------------------------------------------------------------
+valid_vols = active_df['Volume_MT'].dropna()
+total_production_mt = valid_vols.sum()
+
+if not active_df.empty and active_df['Year'].nunique() > 0:
+    yearly_totals = active_df.groupby('Year')['Volume_MT'].sum()
+    avg_annual_mt = yearly_totals.mean()
+    if not yearly_totals.empty:
+        peak_year = int(yearly_totals.idxmax())
+        peak_vol_mt = yearly_totals.max()
+        lowest_year = int(yearly_totals.idxmin())
+        lowest_vol_mt = yearly_totals.min()
+    else:
+        peak_year, peak_vol_mt, lowest_year, lowest_vol_mt = "N/A", 0, "N/A", 0
+else:
+    avg_annual_mt = 0
+    peak_year, peak_vol_mt, lowest_year, lowest_vol_mt = "N/A", 0, "N/A", 0
+
+# Benchmark Top Producing Region across selected period
+reg_benchmark = df[
+    (df['Year'] >= selected_years[0]) & 
+    (df['Year'] <= selected_years[1]) & 
+    (df['Hierarchy_Level'] == 'Regional') &
+    (df['Crop'].isin(selected_varieties)) &
+    (df['Period_Type'] == ('Annual' if selected_period_type == "Annual (Recommended)" else 'Quarterly'))
+]
+if not reg_benchmark.empty:
+    top_reg_series = reg_benchmark.groupby('Region')['Volume_MT'].sum()
+    top_region_name = top_reg_series.idxmax().replace("REGION ", "Reg ").replace("ADMINISTRATIVE REGION", "CAR")
+    top_region_vol = top_reg_series.max()
+else:
+    top_region_name, top_region_vol = "N/A", 0
+
+# Render 4 KPI Metric Cards
+k1, k2, k3, k4 = st.columns(4)
+with k1:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">Total Volume Output</div>
+        <div class="metric-value">{total_production_mt/1e6:.2f}M <span style="font-size:0.95rem;font-weight:600;">MT</span></div>
+        <div class="metric-sub">{geo_label[:22]}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with k2:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">Average Annual Yield</div>
+        <div class="metric-value">{avg_annual_mt/1e6:.2f}M <span style="font-size:0.95rem;font-weight:600;">MT</span></div>
+        <div class="metric-sub">Across {selected_years[1] - selected_years[0] + 1} Years</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with k3:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">Peak Production Year</div>
+        <div class="metric-value">{peak_year}</div>
+        <div class="metric-sub">{peak_vol_mt/1e6:.2f}M MT ({peak_year})</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with k4:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">National Top Region</div>
+        <div class="metric-value" style="font-size:1.35rem;padding-top:4px;">{top_region_name[:18]}</div>
+        <div class="metric-sub">{top_region_vol/1e6:.2f}M MT in horizon</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# -----------------------------------------------------------------------------
+# 7. TABBED ADVANCED ANALYTICS DASHBOARD
+# -----------------------------------------------------------------------------
+tab_overview, tab_trends, tab_anomalies, tab_forecast, tab_methods = st.tabs([
+    "📊 Core Surveillance",
+    "📈 Growth & Trend Modeling",
+    "🔍 Outliers & Shocks (Z-Score)",
+    "🔮 Exploratory Forecasting",
+    "📐 Mathematical Methodology"
+])
+
+
+# =============================================================================
+# TAB 1: CORE SURVEILLANCE & VISUAL EXPLORER
+# =============================================================================
+with tab_overview:
+    # Automated Insights Narrative
+    if not active_df.empty and len(yearly_totals) > 1:
+        start_y = yearly_totals.index.min()
+        end_y = yearly_totals.index.max()
+        v_start = yearly_totals.loc[start_y]
+        v_end = yearly_totals.loc[end_y]
+        pct_change = ((v_end - v_start) / v_start) * 100 if v_start > 0 else 0
+        cagr_val = calculate_cagr(v_start, v_end, end_y - start_y)
+        dir_text = "net expansion" if pct_change >= 0 else "net contraction"
+        
+        st.markdown(f"""
+        <div class="insights-card">
+            <div class="insights-title">💡 Automated Surveillance Summary for {geo_label}</div>
+            <div class="insights-body">
+                Between <b>{start_y}</b> and <b>{end_y}</b>, banana production in <b>{geo_label}</b> recorded a 
+                <b>{dir_text} of {abs(pct_change):.2f}%</b> (CAGR: <b>{cagr_val:+.2f}%/year</b>), moving from 
+                {v_start/1e3:,.1f}K MT to {v_end/1e3:,.1f}K MT. 
+                Peak production reached <b>{peak_vol_mt/1e3:,.1f}K MT in {peak_year}</b>, while the historical lowest volume was 
+                <b>{lowest_vol_mt/1e3:,.1f}K MT in {lowest_year}</b>.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Visualizations Row 1
+    c1, c2 = st.columns([1.3, 1])
+    with c1:
+        st.markdown("##### **Annual Production Trajectory**")
+        if not active_df.empty:
+            annual_plot_data = active_df.groupby(['Year', 'Crop'])['Volume_MT'].sum().reset_index()
+            fig_traj = px.line(
+                annual_plot_data, x='Year', y='Volume_MT', color='Crop',
+                markers=True, line_shape='spline',
+                color_discrete_sequence=['#1b4332', '#2d6a4f', '#52b788', '#ff7f0e', '#d62728', '#9467bd'],
+                labels={'Volume_MT': 'Volume (MT)', 'Year': 'Year'}
+            )
+            fig_traj.update_layout(hovermode="x unified", margin=dict(l=20, r=20, t=25, b=20), plot_bgcolor="white")
+            fig_traj.update_yaxes(gridcolor='#e5e7eb')
+            fig_traj.update_xaxes(gridcolor='#e5e7eb')
+            st.plotly_chart(fig_traj, use_container_width=True)
+
+    with c2:
+        st.markdown("##### **Intra-Annual Quarterly Seasonality**")
+        q_subset = df[(df['Year'] >= selected_years[0]) & (df['Year'] <= selected_years[1]) & (df['Period_Type'] == 'Quarterly') & (df['Crop'].isin(selected_varieties))]
+        if selected_province != all_prov_opt:
+            q_subset = q_subset[q_subset['Province_City'] == selected_province]
+        elif selected_region != all_regions_opt:
+            q_subset = q_subset[(q_subset['Region'] == selected_region) & (q_subset['Hierarchy_Level'] == 'Regional')]
+        else:
+            q_subset = q_subset[q_subset['Hierarchy_Level'] == 'National']
+
+        if not q_subset.empty:
+            q_agg = q_subset.groupby('Period')['Volume_MT'].mean().reindex(['Q1', 'Q2', 'Q3', 'Q4']).reset_index()
+            fig_q = px.bar(
+                q_agg, x='Period', y='Volume_MT', color='Period',
+                color_discrete_sequence=['#a7f3d0', '#34d399', '#059669', '#047857'],
+                labels={'Volume_MT': 'Mean MT', 'Period': 'Quarter'}, text_auto='.2s'
+            )
+            fig_q.update_layout(showlegend=False, margin=dict(l=20, r=20, t=25, b=20), plot_bgcolor="white")
+            st.plotly_chart(fig_q, use_container_width=True)
+
+    # Visualizations Row 2
+    c3, c4 = st.columns([1.2, 1])
+    with c3:
+        st.markdown("##### **Regional Production Rankings**")
+        reg_data = df[
+            (df['Year'] >= selected_years[0]) & (df['Year'] <= selected_years[1]) & 
+            (df['Hierarchy_Level'] == 'Regional') & 
+            (df['Period_Type'] == ('Annual' if selected_period_type == "Annual (Recommended)" else 'Quarterly')) &
+            (df['Crop'].isin(selected_varieties))
+        ].groupby('Region')['Volume_MT'].sum().reset_index().sort_values('Volume_MT', ascending=True)
+
+        if not reg_data.empty:
+            reg_data['Clean_Region'] = reg_data['Region'].str.replace(r'REGION [IVX]+ \((.*?)\)', r'\1', regex=True)
+            fig_reg = px.bar(
+                reg_data, x='Volume_MT', y='Clean_Region', orientation='h',
+                color='Volume_MT', color_continuous_scale=['#bbf7d0', '#2d6a4f', '#081c15'],
+                labels={'Volume_MT': 'Total MT', 'Clean_Region': 'Region'}
+            )
+            fig_reg.update_layout(coloraxis_showscale=False, margin=dict(l=20, r=20, t=20, b=20), plot_bgcolor="white")
+            st.plotly_chart(fig_reg, use_container_width=True)
+
+    with c4:
+        st.markdown("##### **Cultivar Market Composition**")
+        cult_df = df[
+            (df['Year'] >= selected_years[0]) & (df['Year'] <= selected_years[1]) & 
+            (df['Crop'] != 'Banana (Total)') & 
+            (df['Period_Type'] == ('Annual' if selected_period_type == "Annual (Recommended)" else 'Quarterly'))
+        ]
+        if selected_province != all_prov_opt:
+            cult_df = cult_df[cult_df['Province_City'] == selected_province]
+        elif selected_region != all_regions_opt:
+            cult_df = cult_df[(cult_df['Region'] == selected_region) & (cult_df['Hierarchy_Level'] == 'Regional')]
+        else:
+            cult_df = cult_df[cult_df['Hierarchy_Level'] == 'National']
+
+        if not cult_df.empty:
+            cult_agg = cult_df.groupby('Crop')['Volume_MT'].sum().reset_index()
+            cult_agg['Crop_Name'] = cult_agg['Crop'].str.replace('Banana ', '')
+            fig_donut = px.pie(
+                cult_agg, names='Crop_Name', values='Volume_MT', hole=0.45,
+                color_discrete_sequence=['#1b4332', '#2d6a4f', '#52b788', '#74c69d', '#95d5b2', '#d8f3dc']
+            )
+            fig_donut.update_layout(margin=dict(l=20, r=20, t=20, b=20))
+            st.plotly_chart(fig_donut, use_container_width=True)
+
+    # Interactive Table Explorer
+    st.markdown("<div class='section-title'>📋 Production Records Explorer</div>", unsafe_allow_html=True)
+    table_display = active_df[['Year', 'Period', 'Crop', 'Region', 'Province_City', 'Volume_MT', 'Data_Status']].sort_values(by=['Year', 'Crop'], ascending=[False, True])
+    st.dataframe(table_display.style.format({'Volume_MT': '{:,.2f}'}), use_container_width=True, height=280)
+    
+    csv_bytes = table_display.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        "📥 Download Filtered Records as CSV",
+        data=csv_bytes,
+        file_name=f"bananascope_filtered_{selected_years[0]}_{selected_years[1]}.csv",
+        mime="text/csv"
+    )
+
+
+# =============================================================================
+# TAB 2: ADVANCED GROWTH & TREND MODELING
+# =============================================================================
+with tab_trends:
+    st.markdown("<div class='section-title'>📈 Year-over-Year (YoY) Growth & Longitudinal Trend Analysis</div>", unsafe_allow_html=True)
+    
+    if len(yearly_totals) >= 2:
+        yoy_base = pd.DataFrame({'Year': yearly_totals.index, 'Volume_MT': yearly_totals.values})
+        yoy_df = compute_yoy_growth(yoy_base)
+        trend_df, t_stats = compute_trend_models(yoy_base)
+
+        # Metrics row
+        m1, m2, m3, m4 = st.columns(4)
+        cagr_period = calculate_cagr(yoy_df['Volume_MT'].iloc[0], yoy_df['Volume_MT'].iloc[-1], len(yoy_df) - 1)
+        mean_yoy = yoy_df['YoY_Growth_Pct'].dropna().mean()
+        max_growth_row = yoy_df.loc[yoy_df['YoY_Growth_Pct'].idxmax()] if yoy_df['YoY_Growth_Pct'].notna().any() else None
+        min_growth_row = yoy_df.loc[yoy_df['YoY_Growth_Pct'].idxmin()] if yoy_df['YoY_Growth_Pct'].notna().any() else None
+
+        with m1:
+            st.metric("Compound Annual Growth (CAGR)", f"{cagr_period:+.2f}%/yr")
+        with m2:
+            st.metric("Average YoY Growth", f"{mean_yoy:+.2f}%")
+        with m3:
+            if max_growth_row is not None:
+                st.metric(f"Highest Growth ({int(max_growth_row['Year'])})", f"{max_growth_row['YoY_Growth_Pct']:+.2f}%")
+        with m4:
+            st.metric("OLS Trend Slope", f"{t_stats['slope_mt_per_year']:+,.0f} MT/yr", help="Ordinary Least Squares linear rate of change")
+
+        # Visual 1: YoY Growth Rate Bars
+        st.markdown("##### **Annual Year-over-Year Percentage Growth (% Change)**")
+        yoy_clean = yoy_df.dropna(subset=['YoY_Growth_Pct']).copy()
+        yoy_clean['Growth_Color'] = np.where(yoy_clean['YoY_Growth_Pct'] >= 0, 'Expansion (+)', 'Contraction (-)')
+        
+        fig_yoy = px.bar(
+            yoy_clean, x='Year', y='YoY_Growth_Pct', color='Growth_Color',
+            color_discrete_map={'Expansion (+)': '#16a34a', 'Contraction (-)': '#dc2626'},
+            labels={'YoY_Growth_Pct': 'YoY Growth (%)', 'Year': 'Year'},
+            text_auto='+.2f'
+        )
+        fig_yoy.add_hline(y=0, line_dash="dash", line_color="black")
+        fig_yoy.update_layout(margin=dict(l=20, r=20, t=25, b=20), plot_bgcolor="white", legend_title="")
+        st.plotly_chart(fig_yoy, use_container_width=True)
+
+        # Visual 2: Moving Average (SMA-3) and Linear Trendline
+        st.markdown("##### **Production Volume with 3-Year Rolling Moving Average & Linear Trendline**")
+        fig_smooth = go.Figure()
+        fig_smooth.add_trace(go.Scatter(x=trend_df['Year'], y=trend_df['Volume_MT'], mode='lines+markers', name='Actual Annual Output', line=dict(color='#1b4332', width=2.5)))
+        fig_smooth.add_trace(go.Scatter(x=trend_df['Year'], y=trend_df['SMA_3'], mode='lines', name='3-Year Moving Average (SMA-3)', line=dict(color='#52b788', width=2.5, dash='dot')))
+        fig_smooth.add_trace(go.Scatter(x=trend_df['Year'], y=trend_df['Linear_Trend'], mode='lines', name=f"OLS Linear Trend (R² = {t_stats['r_squared']:.2f})", line=dict(color='#ff7f0e', width=2, dash='dash')))
+        fig_smooth.update_layout(hovermode="x unified", margin=dict(l=20, r=20, t=25, b=20), plot_bgcolor="white", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+        fig_smooth.update_yaxes(gridcolor='#e5e7eb')
+        fig_smooth.update_xaxes(gridcolor='#e5e7eb')
+        st.plotly_chart(fig_smooth, use_container_width=True)
+
+        # Visual 3: Cultivar Growth Divergence
+        st.markdown("##### **Cultivar Trajectory Comparison (Normalized Growth Divergence)**")
+        multi_var_df = df[(df['Hierarchy_Level'] == 'National') & (df['Crop'] != 'Banana (Total)') & (df['Period_Type'] == 'Annual') & (df['Year'] <= selected_years[1]) & (df['Year'] >= selected_years[0])]
+        if not multi_var_df.empty:
+            fig_cult_growth = px.line(
+                multi_var_df, x='Year', y='Volume_MT', color='Crop',
+                markers=True, labels={'Volume_MT': 'Volume (MT)', 'Year': 'Year'}
+            )
+            fig_cult_growth.update_layout(margin=dict(l=20, r=20, t=25, b=20), plot_bgcolor="white")
+            st.plotly_chart(fig_cult_growth, use_container_width=True)
+    else:
+        st.warning("Insufficient data points in current selection to compute growth trends. Please expand your year horizon.")
+
+
+# =============================================================================
+# TAB 3: STATISTICAL ANOMALY & SHOCK DETECTION
+# =============================================================================
+with tab_anomalies:
+    st.markdown("<div class='section-title'>🔍 Statistical Anomaly & Production Shock Detection</div>", unsafe_allow_html=True)
+    st.caption("Empirically flags unusually high harvest peaks and severe production troughs using standard statistical Z-scores and Interquartile Range (IQR) bounds.")
+
+    if len(yearly_totals) >= 4:
+        anom_base = pd.DataFrame({'Year': yearly_totals.index, 'Volume_MT': yearly_totals.values})
+        anom_df = detect_statistical_anomalies(anom_base, z_thresh=1.4)
+
+        # Plotly Scatter Chart with Anomaly Annotations
+        fig_anom = px.scatter(
+            anom_df, x='Year', y='Volume_MT', color='Anomaly_Flag',
+            size=np.abs(anom_df['Z_Score']) + 1.0,
+            color_discrete_map={
+                'Normal Production': '#2d6a4f',
+                'Unusually High Output': '#2563eb',
+                'Unusually Low Shock': '#dc2626',
+                'Unrecorded': '#9ca3af'
+            },
+            labels={'Volume_MT': 'Production Volume (MT)', 'Year': 'Calendar Year'},
+            text='Year'
+        )
+        fig_anom.update_traces(textposition='top center')
+        
+        # Superimpose mean line and +/- 1.5 standard deviation threshold bounds
+        v_mean = anom_base['Volume_MT'].mean()
+        v_std = anom_base['Volume_MT'].std()
+        fig_anom.add_hline(y=v_mean, line_color="#1b4332", line_width=1.5, annotation_text=f"Historical Mean: {v_mean/1e3:.1f}K MT")
+        fig_anom.add_hline(y=v_mean + 1.4 * v_std, line_dash="dot", line_color="#2563eb", annotation_text="+1.4σ Upper Bound")
+        fig_anom.add_hline(y=max(0, v_mean - 1.4 * v_std), line_dash="dot", line_color="#dc2626", annotation_text="-1.4σ Lower Bound (Shock)")
+
+        fig_anom.update_layout(margin=dict(l=20, r=20, t=30, b=20), plot_bgcolor="white", legend_title="Statistical Classification")
+        st.plotly_chart(fig_anom, use_container_width=True)
+
+        # Table of flagged observations
+        flagged_rows = anom_df[anom_df['Anomaly_Flag'] != 'Normal Production']
+        if not flagged_rows.empty:
+            st.markdown("##### **Identified Statistical Anomalies in Selected Scope:**")
+            display_flags = flagged_rows[['Year', 'Volume_MT', 'Z_Score', 'Anomaly_Flag']].copy()
+            st.dataframe(display_flags.style.format({'Volume_MT': '{:,.2f}', 'Z_Score': '{:+.2f}'}), use_container_width=True)
+        else:
+            st.success("All observed production years in this selection remain within standard statistical variance bounds (between -1.4σ and +1.4σ).")
+    else:
+        st.info("At least 4 observation years are required to compute statistical Z-score bounds.")
+
+
+# =============================================================================
+# TAB 4: EXPLORATORY TIME-SERIES FORECASTING
+# =============================================================================
+with tab_forecast:
+    st.markdown("<div class='section-title'>🔮 Exploratory Time-Series Forecasting (Holt's Linear Smoothing)</div>", unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div class="warning-banner">
+        ⚠️ <b>Academic Disclaimer & Methodological Note:</b><br>
+        The projections generated below are <b>exploratory statistical estimates</b> calculated using 
+        Double Exponential Smoothing (Holt's Linear Trend Model). They are designed for scenario planning and research exercises, 
+        and should <b>not be treated as certified actual production figures</b>.
+    </div>
+    """, unsafe_allow_html=True)
+
+    fc_horizon = st.slider("Select Forecast Horizon (Years into the future):", min_value=2, max_value=5, value=4)
+
+    # Prepare historical annual series for forecasting
+    fc_base = pd.DataFrame({'Year': yearly_totals.index, 'Volume_MT': yearly_totals.values})
+    
+    forecast_results = run_time_series_forecast(
+        fc_base, 
+        train_ratio=0.8, 
+        forecast_horizon=fc_horizon
+    )
+
+    if forecast_results is not None:
+        metrics = forecast_results['eval_metrics']
+        train_df = forecast_results['train_df']
+        test_df = forecast_results['test_df']
+        future_df = forecast_results['forecast_df']
+
+        # Accuracy Scorecards
+        f1, f2, f3 = st.columns(3)
+        with f1:
+            st.metric("Mean Absolute Error (MAE)", f"{metrics['MAE_MT']/1e3:,.1f}K MT", help="Average magnitude of forecast errors in Metric Tons")
+        with f2:
+            st.metric("Root Mean Squared Error (RMSE)", f"{metrics['RMSE_MT']/1e3:,.1f}K MT", help="Standard deviation of residuals; penalizes larger errors")
+        with f3:
+            st.metric("Mean Absolute % Error (MAPE)", f"{metrics['MAPE_Pct']:.2f}%", help="Percentage accuracy on unseen test data (< 10% is highly accurate)")
+
+        st.caption(f"🧪 **Validation Setup:** Trained on {metrics['Train_Years']} • Evaluated on held-out test data from {metrics['Test_Years']}.")
+
+        # Forecasting Chart
+        fig_fc = go.Figure()
+
+        # 1. Historical Training Data
+        fig_fc.add_trace(go.Scatter(
+            x=train_df['Year'], y=train_df['Volume_MT'],
+            mode='lines+markers', name='Historical Training Data',
+            line=dict(color='#1b4332', width=2.5), marker=dict(size=6)
+        ))
+
+        # 2. Historical Test Data (Actual)
+        fig_fc.add_trace(go.Scatter(
+            x=test_df['Year'], y=test_df['Volume_MT'],
+            mode='lines+markers', name='Actual Test Data (Holdout)',
+            line=dict(color='#2ca02c', width=2.5), marker=dict(size=8, symbol='diamond')
+        ))
+
+        # 3. Model Predictions on Test Data
+        fig_fc.add_trace(go.Scatter(
+            x=test_df['Year'], y=test_df['Predicted_MT'],
+            mode='lines+markers', name='Model Test Predictions',
+            line=dict(color='#f59e0b', width=2, dash='dot'), marker=dict(size=7, symbol='cross')
+        ))
+
+        # 4. Out-of-Sample Future Projections
+        fig_fc.add_trace(go.Scatter(
+            x=future_df['Year'], y=future_df['Projected_MT'],
+            mode='lines+markers', name='Exploratory Estimate (Forecast)',
+            line=dict(color='#2563eb', width=3, dash='dash'), marker=dict(size=8, symbol='star')
+        ))
+
+        # 5. 95% Confidence Interval Band
+        fig_fc.add_trace(go.Scatter(
+            x=list(future_df['Year']) + list(future_df['Year'])[::-1],
+            y=list(future_df['Upper_CI_MT']) + list(future_df['Lower_CI_MT'])[::-1],
+            fill='toself', fillcolor='rgba(37, 99, 235, 0.12)',
+            line=dict(color='rgba(255,255,255,0)'),
+            hoverinfo="skip", showlegend=True, name='95% Confidence Interval Band'
+        ))
+
+        fig_fc.update_layout(
+            title=f"<b>Actual vs. Model-Predicted Production & Future Exploratory Trajectory ({geo_label})</b>",
+            xaxis_title="Calendar Year",
+            yaxis_title="Volume of Production (MT)",
+            hovermode="x unified",
+            margin=dict(l=20, r=20, t=40, b=20),
+            plot_bgcolor="white",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        fig_fc.update_yaxes(gridcolor='#e5e7eb')
+        fig_fc.update_xaxes(gridcolor='#e5e7eb')
+        st.plotly_chart(fig_fc, use_container_width=True)
+
+        # Tabular Future Estimates
+        st.markdown("##### **Projected Future Estimates (Exploratory Scenario Table):**")
+        st.dataframe(
+            future_df[['Year', 'Projected_MT', 'Lower_CI_MT', 'Upper_CI_MT', 'Type']].style.format({
+                'Projected_MT': '{:,.2f}',
+                'Lower_CI_MT': '{:,.2f}',
+                'Upper_CI_MT': '{:,.2f}'
+            }),
+            use_container_width=True
+        )
+    else:
+        st.warning("Insufficient continuous historical observations to train the time-series model. Please expand your year selection.")
+
+
+# =============================================================================
+# TAB 5: MATHEMATICAL & METHODOLOGICAL REFERENCE
+# =============================================================================
+with tab_methods:
+    st.markdown("<div class='section-title'>📐 Mathematical Formulations & Statistical Methods</div>", unsafe_allow_html=True)
+    
+    st.markdown("""
+    This section documents the formal mathematical and statistical formulas implemented in the **BananaScope PH Advanced Analytics Engine**:
+
+    ### 1. Year-over-Year (YoY) Growth Rate
+    Measures the annual percentage rate of expansion or contraction between consecutive years:
+    $$\\Delta V_t = V_t - V_{t-1}$$
+    $$\\text{YoY Growth Rate } (\\%) = \\left( \\frac{V_t - V_{t-1}}{V_{t-1}} \\right) \\times 100$$
+    *Where $V_t$ is the volume of production in year $t$, and $V_{t-1}$ is the volume in the preceding year.*
+
+    ---
+
+    ### 2. Compound Annual Growth Rate (CAGR)
+    Provides a smoothed annualized rate of agricultural growth over an $n$-year horizon, removing intervening volatility:
+    $$\\text{CAGR} = \\left( \\frac{V_{\\text{end}}}{V_{\\text{start}}} \\right)^{\\frac{1}{n}} - 1$$
+    *Where $V_{\\text{start}}$ is the baseline volume, $V_{\\text{end}}$ is the ending volume, and $n$ is the number of elapsed years.*
+
+    ---
+
+    ### 3. Ordinary Least Squares (OLS) Linear Trend
+    Determines the baseline linear slope of production trajectory:
+    $$\\hat{y}_t = \\beta_0 + \\beta_1 t$$
+    $$\\beta_1 = \\frac{\\sum_{i=1}^n (t_i - \\bar{t})(y_i - \\bar{y})}{\\sum_{i=1}^n (t_i - \\bar{t})^2}, \\quad \\beta_0 = \\bar{y} - \\beta_1 \\bar{t}$$
+    The Goodness of Fit ($R^2$) reflects the proportion of volume variance explained by the chronological trend:
+    $$R^2 = 1 - \\frac{\\sum (y_i - \\hat{y}_i)^2}{\\sum (y_i - \\bar{y})^2}$$
+
+    ---
+
+    ### 4. Statistical Anomaly & Outlier Detection (Z-Score)
+    Standardizes historical production observations into standard deviation units to isolate shock years:
+    $$Z_t = \\frac{V_t - \\mu}{\\sigma}$$
+    *Where $\\mu$ is the historical sample mean and $\\sigma$ is the sample standard deviation.*
+    * **High Anomaly Threshold:** $Z_t > +1.4$ (Identifies significant harvest booms).
+    * **Low Shock Threshold:** $Z_t < -1.4$ (Identifies severe pest outbreaks, drought, or typhoon devastation).
+
+    ---
+
+    ### 5. Double Exponential Smoothing (Holt's Linear Trend Forecasting)
+    Applies recursive smoothing to update both the series level $(\\ell_t)$ and growth trend $(b_t)$:
+    $$\\text{Level Equation:} \\quad \\ell_t = \\alpha y_t + (1 - \\alpha)(\\ell_{t-1} + b_{t-1})$$
+    $$\\text{Trend Equation:} \\quad b_t = \\beta (\\ell_t - \\ell_{t-1}) + (1 - \\beta) b_{t-1}$$
+    $$\\text{Forecast Equation:} \\quad \\hat{y}_{t+h} = \\ell_t + h b_t$$
+    *Parameters:* Smoothing weight $\\alpha = 0.6$, Trend weight $\\beta = 0.2$, Forecast lead time $h$.
+
+    ---
+
+    ### 6. Forecast Accuracy Evaluation Metrics
+    * **Mean Absolute Error (MAE):** $\\text{MAE} = \\frac{1}{n} \\sum_{i=1}^n |y_i - \\hat{y}_i|$
+    * **Root Mean Squared Error (RMSE):** $\\text{RMSE} = \\sqrt{ \\frac{1}{n} \\sum_{i=1}^n (y_i - \\hat{y}_i)^2 }$
+    * **Mean Absolute Percentage Error (MAPE):** $\\text{MAPE} = \\frac{100\\%}{n} \\sum_{i=1}^n \\left| \\frac{y_i - \\hat{y}_i}{y_i} \\right|$
+    """)
+
+st.markdown("---")
+st.markdown(
+    "<div style='text-align: center; color: #666; font-size: 0.85rem; padding: 10px;'>"
+    "🍌 <b>BananaScope PH v2.0 (Advanced Analytics Edition)</b> • Leuteboro National High School (Socorro, Oriental Mindoro) • "
+    "Supervised by <b>Sir Aldrin D. Magtibay</b>"
+    "</div>", 
+    unsafe_allow_html=True
+)

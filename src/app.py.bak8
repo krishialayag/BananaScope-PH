@@ -1,0 +1,1867 @@
+"""
+BananaScope PH: Philippine Banana Production Analytics (2010–2026)
+------------------------------------------------------------------
+Main Interactive Web Application & Advanced Analytics Engine
+Built with Streamlit & Plotly Express.
+
+Visual Identity: Minimalist Agricultural Analytics Design System
+Official Color Palette:
+  • Sunshine Yellow (#FFD54F) - Secondary buttons, highlights & accents
+  • Soft Butter     (#FFE8A1) - Card surfaces, badge insets, container borders
+  • Warm Cream      (#FFF7E1) - Main background & canvas surfaces
+  • Peach Glow      (#FFB366) - Indicators, negative trends & contrast accents
+  • Sunlit Green    (#A3B454) - Primary buttons, active navigation, positive indicators
+  • Dark Earthy Brown (#3E2723) - High-contrast readable headings & typography
+
+Developed for Fundamentals of Data Analytics
+Leuteboro National High School (DepEd MIMAROPA, Oriental Mindoro)
+Supervised by Sir Aldrin D. Magtibay, Teacher V
+
+Research Team:
+  1. Krishia Mae R. Layag (Project Lead & Data Pipeline Engineer)
+  2. Ann Ehra V. Avelino (Dashboard & UI/UX Design Lead)
+  3. Hannah Aeshell V. Perez (Data Analytics & Documentation Lead)
+"""
+
+import os
+import re
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import streamlit as st
+
+# Import Advanced Analytics Engine (PRESERVED 100%)
+from analytics_engine import (
+    compute_yoy_growth,
+    calculate_cagr,
+    compute_trend_models,
+    detect_statistical_anomalies,
+    run_time_series_forecast
+)
+
+# -----------------------------------------------------------------------------
+# 1. PAGE CONFIGURATION & MINIMALIST AGRICULTURAL THEME
+# -----------------------------------------------------------------------------
+st.set_page_config(
+    page_title="BananaScope PH | Philippine Banana Analytics",
+    page_icon="🍌",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Ordered List of All 13 Analytical Views (Preserving All Original Sections)
+NAV_SECTIONS = [
+    {
+        "id": "ANNUAL_TRAJECTORY",
+        "category": "Production Overview & Seasonality",
+        "title": "Annual Production Trajectory",
+        "short_title": "Annual Trajectory",
+        "icon": "📈",
+        "desc": "15-year national production volume trajectory (2010–2024)"
+    },
+    {
+        "id": "QUARTERLY_SEASONALITY",
+        "category": "Production Overview & Seasonality",
+        "title": "Quarterly Harvest Patterns",
+        "short_title": "Quarterly Harvest",
+        "icon": "⏱️",
+        "desc": "Intra-annual seasonal cycles & Q1 lean harvest troughs"
+    },
+    {
+        "id": "REGIONAL_RANKINGS",
+        "category": "Regional & Geographic Rankings",
+        "title": "Regional Production Comparison",
+        "short_title": "Regional Rankings",
+        "icon": "🗺️",
+        "desc": "Output rankings across all 17 Philippine administrative regions"
+    },
+    {
+        "id": "CULTIVAR_DONUT",
+        "category": "Banana Variety Analysis",
+        "title": "Variety Market Share Breakdown",
+        "short_title": "Variety Market Share",
+        "icon": "🍌",
+        "desc": "Market shares of Cavendish, Saba, Lakatan, and Latundan"
+    },
+    {
+        "id": "VARIETY_COMPARISON",
+        "category": "Banana Variety Analysis",
+        "title": "Multi-Year Harvest Trends by Variety",
+        "short_title": "Variety Trends",
+        "icon": "🌿",
+        "desc": "Historical multi-year trajectory comparison by cultivar"
+    },
+    {
+        "id": "YOY_GROWTH",
+        "category": "Growth Rates, Trendlines & Forecasting",
+        "title": "Year-over-Year Percentage Growth",
+        "short_title": "YoY % Growth",
+        "icon": "📊",
+        "desc": "Annual expansion and contraction rates with clean KPIs"
+    },
+    {
+        "id": "MOVING_AVERAGE",
+        "category": "Growth Rates, Trendlines & Forecasting",
+        "title": "3-Year Moving Average & Linear Trend",
+        "short_title": "3-Yr Trendline",
+        "icon": "🌾",
+        "desc": "Smoothed 3-year rolling average and OLS regression trendline"
+    },
+    {
+        "id": "ANOMALIES_SCATTER",
+        "category": "Growth Rates, Trendlines & Forecasting",
+        "title": "Statistical Anomaly Detection (Z-Score)",
+        "short_title": "Anomaly Shocks",
+        "icon": "🔍",
+        "desc": "Statistical detection of harvest booms and extreme climate shocks"
+    },
+    {
+        "id": "FORECAST_CHART",
+        "category": "Growth Rates, Trendlines & Forecasting",
+        "title": "Exploratory Time-Series Forecast",
+        "short_title": "Future Forecast",
+        "icon": "🔮",
+        "desc": "Holt's Double Exponential Smoothing with 95% confidence bounds"
+    },
+    {
+        "id": "FORECAST_TABLE",
+        "category": "Structured Tables & Methodology",
+        "title": "Projected Scenario Estimates Table",
+        "short_title": "Forecast Table",
+        "icon": "📋",
+        "desc": "Future volume projections and 95% confidence limits"
+    },
+    {
+        "id": "ANOMALIES_TABLE",
+        "category": "Structured Tables & Methodology",
+        "title": "Summary Table of Flagged Anomaly Years",
+        "short_title": "Anomaly Table",
+        "icon": "⚠️",
+        "desc": "Structured audit of historical boom and shock years"
+    },
+    {
+        "id": "RECORDS_TABLE",
+        "category": "Structured Tables & Methodology",
+        "title": "Official Production Records Explorer",
+        "short_title": "Records Explorer",
+        "icon": "📑",
+        "desc": "Searchable, sortable, and downloadable PSA volume dataset"
+    },
+    {
+        "id": "MATH_METHODOLOGY",
+        "category": "Structured Tables & Methodology",
+        "title": "Mathematical Formulations & Methods",
+        "short_title": "Methodology",
+        "icon": "📐",
+        "desc": "Formal formulas for YoY, CAGR, OLS, Z-scores, and Holt's equations"
+    }
+]
+
+VIEW_IDS = [s["id"] for s in NAV_SECTIONS]
+
+# Initialize Session State
+if "active_view" not in st.session_state or (st.session_state.active_view != "HOME" and st.session_state.active_view not in VIEW_IDS):
+    st.session_state.active_view = "HOME"
+
+# Exact Five-Color Palette CSS Styling
+st.markdown("""
+<style>
+    /* Google Fonts */
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,700;1,600&display=swap');
+
+    :root {
+        --sunshine-yellow: #FFD54F;
+        --soft-butter: #FFE8A1;
+        --warm-cream: #FFF7E1;
+        --peach-glow: #FFB366;
+        --sunlit-green: #A3B454;
+        --text-brown: #3E2723;
+        --text-muted: #6D5545;
+        --card-white: #FFFDF6;
+        --card-shadow: rgba(163, 180, 84, 0.12);
+    }
+
+    /* Global App Background */
+    .stApp {
+        background-color: var(--warm-cream) !important;
+        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif !important;
+        color: var(--text-brown) !important;
+    }
+
+    /* ---------------- CLEAN SIDEBAR ---------------- */
+    [data-testid="stSidebar"] {
+        background-color: #FFF2CD !important;
+        background-image: 
+            radial-gradient(circle at 10% 15%, rgba(255, 213, 79, 0.20) 0%, transparent 50%),
+            radial-gradient(circle at 90% 85%, rgba(163, 180, 84, 0.15) 0%, transparent 45%),
+            linear-gradient(180deg, #FFF6DA 0%, #FFE8A1 100%) !important;
+        border-right: 1.5px solid rgba(255, 213, 79, 0.4) !important;
+        box-shadow: 3px 0 14px rgba(215, 180, 100, 0.12) !important;
+    }
+
+    [data-testid="stSidebar"] * {
+        color: var(--text-brown) !important;
+    }
+
+    [data-testid="stSidebar"] h1, 
+    [data-testid="stSidebar"] h2, 
+    [data-testid="stSidebar"] h3 {
+        color: var(--text-brown) !important;
+        font-weight: 800 !important;
+        letter-spacing: 0.2px;
+    }
+
+    [data-testid="stSidebar"] label {
+        color: var(--text-brown) !important;
+        font-size: 0.84rem !important;
+        font-weight: 700 !important;
+    }
+
+    [data-testid="stSidebar"] hr {
+        border-color: rgba(255, 213, 79, 0.35) !important;
+        margin: 12px 0 !important;
+    }
+
+    /* Sidebar Brand Card */
+    .sidebar-brand-box {
+        background: var(--card-white);
+        border-radius: 14px;
+        box-shadow: 2px 2px 10px rgba(163, 180, 84, 0.10);
+        border: 1px solid rgba(255, 213, 79, 0.4);
+        border-left: 4px solid var(--sunlit-green);
+        padding: 14px 12px;
+        margin-bottom: 16px;
+    }
+    .sidebar-brand-title {
+        font-family: 'Playfair Display', Georgia, serif;
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--text-brown) !important;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .sidebar-brand-subtitle {
+        font-size: 0.74rem;
+        color: var(--text-muted) !important;
+        margin-top: 3px;
+        font-weight: 600;
+        line-height: 1.30;
+    }
+    .sidebar-tag {
+        display: inline-block;
+        background: var(--soft-butter);
+        color: var(--text-brown) !important;
+        font-size: 0.66rem;
+        font-weight: 800;
+        padding: 2px 8px;
+        border-radius: 10px;
+        margin-top: 6px;
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+    }
+
+    /* Sidebar Controls */
+    [data-testid="stSidebar"] [data-baseweb="select"] > div {
+        background-color: var(--card-white) !important;
+        border-radius: 10px !important;
+        border: 1px solid rgba(255, 213, 79, 0.5) !important;
+        color: var(--text-brown) !important;
+        font-size: 0.84rem !important;
+    }
+    [data-testid="stSidebar"] [role="radiogroup"] {
+        background: var(--card-white);
+        padding: 6px 10px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 213, 79, 0.35);
+    }
+    [data-testid="stSidebar"] .stSlider [data-baseweb="slider"] div[role="slider"] {
+        background-color: var(--sunlit-green) !important;
+        border: 2px solid #FFF !important;
+        box-shadow: 0 0 6px rgba(163, 180, 84, 0.5) !important;
+    }
+
+    /* ---------------- HERO HEADER SECTION ---------------- */
+    .hero-banner {
+        background: var(--card-white);
+        border-radius: 16px;
+        box-shadow: 3px 3px 12px var(--card-shadow);
+        border: 1px solid rgba(255, 213, 79, 0.45);
+        border-left: 6px solid var(--sunlit-green);
+        padding: 18px 24px;
+        margin-bottom: 16px;
+    }
+    .hero-title {
+        font-family: 'Playfair Display', Georgia, serif;
+        font-size: 2.10rem;
+        font-weight: 700;
+        color: var(--text-brown) !important;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        letter-spacing: 0.2px;
+    }
+    .hero-subtitle {
+        font-size: 0.90rem;
+        color: var(--text-muted);
+        margin: 3px 0 0 0;
+        font-weight: 500;
+    }
+    .hero-badges-container {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-top: 8px;
+    }
+    .hero-pill-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        background: var(--warm-cream);
+        border: 1px solid rgba(255, 213, 79, 0.5);
+        color: var(--text-brown);
+        font-size: 0.72rem;
+        font-weight: 700;
+        padding: 2px 10px;
+        border-radius: 14px;
+    }
+
+    /* ---------------- STRICT EQUAL-SIZED 2x2 KPI CARDS ---------------- */
+    .kpi-card-rect {
+        background: var(--card-white);
+        border-radius: 16px;
+        box-shadow: 3px 3px 12px var(--card-shadow);
+        border: 1px solid rgba(255, 213, 79, 0.4);
+        border-top: 4px solid var(--sunlit-green);
+        padding: 16px 20px;
+        margin-bottom: 14px;
+        height: 135px !important;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        box-sizing: border-box;
+        overflow: hidden;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .kpi-card-rect:hover {
+        transform: translateY(-2px);
+        box-shadow: 4px 4px 16px rgba(163, 180, 84, 0.18);
+    }
+    .kpi-card-rect.accent-green {
+        border-top-color: var(--sunlit-green);
+    }
+    .kpi-card-rect.accent-yellow {
+        border-top-color: var(--sunshine-yellow);
+    }
+    .kpi-card-rect.accent-peach {
+        border-top-color: var(--peach-glow);
+    }
+    .kpi-card-rect.accent-butter {
+        border-top-color: #D4B43B;
+    }
+    .kpi-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        height: 28px;
+    }
+    .kpi-label-rect {
+        font-size: 0.82rem;
+        font-weight: 800;
+        color: var(--text-brown);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .kpi-icon-rect {
+        font-size: 1.15rem;
+        background: var(--soft-butter);
+        width: 30px;
+        height: 30px;
+        min-width: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+    }
+    .kpi-value-rect {
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        font-size: 1.85rem;
+        font-weight: 800;
+        color: var(--text-brown);
+        line-height: 1.15;
+        margin: 2px 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .kpi-value-rect .unit-text {
+        font-size: 0.92rem;
+        font-weight: 700;
+        color: var(--sunlit-green);
+        margin-left: 4px;
+    }
+    .kpi-subtext-rect {
+        font-size: 0.78rem;
+        color: var(--text-muted);
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.2;
+    }
+
+    /* ---------------- CLEAN METRIC CARDS (GROWTH SECTION) ---------------- */
+    .growth-kpi-card {
+        background: var(--card-white);
+        border-radius: 14px;
+        box-shadow: 2px 2px 8px var(--card-shadow);
+        border: 1px solid rgba(255, 213, 79, 0.35);
+        border-left: 4px solid var(--sunlit-green);
+        padding: 12px 16px;
+        margin-bottom: 10px;
+        height: 95px !important;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        box-sizing: border-box;
+    }
+    .growth-kpi-label {
+        font-size: 0.74rem;
+        font-weight: 800;
+        color: var(--text-brown);
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .growth-kpi-val {
+        font-size: 1.65rem;
+        font-weight: 800;
+        color: var(--text-brown);
+        margin: 0;
+        line-height: 1.15;
+    }
+    .growth-kpi-val .unit-text {
+        font-size: 0.88rem;
+        font-weight: 700;
+        color: var(--sunlit-green);
+        margin-left: 3px;
+    }
+    .growth-kpi-sub {
+        font-size: 0.74rem;
+        color: var(--text-muted);
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* ---------------- COMPACT CATEGORY CONTAINERS (HOME) ---------------- */
+    .category-group-card {
+        background: var(--card-white);
+        border-radius: 14px;
+        box-shadow: 2px 2px 10px var(--card-shadow);
+        border: 1px solid rgba(255, 213, 79, 0.35);
+        padding: 12px 16px;
+        margin-bottom: 10px;
+    }
+    .category-group-header {
+        font-size: 0.92rem;
+        font-weight: 800;
+        color: var(--text-brown);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 8px;
+        padding-bottom: 4px;
+        border-bottom: 1.5px solid rgba(255, 213, 79, 0.3);
+    }
+
+    /* ---------------- CHART EXPLANATION CARD ---------------- */
+    .chart-explanation {
+        background: var(--card-white);
+        border-radius: 14px;
+        box-shadow: 2px 2px 10px var(--card-shadow);
+        border: 1px solid rgba(255, 213, 79, 0.35);
+        border-left: 4px solid var(--sunlit-green);
+        padding: 14px 18px;
+        margin-top: 12px;
+        margin-bottom: 16px;
+    }
+    .chart-explanation-title {
+        font-size: 0.90rem;
+        font-weight: 800;
+        color: var(--text-brown);
+        margin-bottom: 4px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .chart-explanation-body {
+        font-size: 0.86rem;
+        color: var(--text-brown);
+        line-height: 1.50;
+    }
+
+    /* ---------------- SURVEILLANCE & ALERT CARDS ---------------- */
+    .insights-card {
+        background: var(--card-white);
+        border-radius: 14px;
+        box-shadow: 2px 2px 10px var(--card-shadow);
+        border: 1px solid rgba(255, 213, 79, 0.35);
+        border-left: 4px solid var(--sunlit-green);
+        padding: 14px 18px;
+        margin: 12px 0 16px 0;
+    }
+    .insights-title {
+        font-size: 0.92rem;
+        font-weight: 800;
+        color: var(--text-brown);
+        margin-bottom: 4px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .insights-body {
+        font-size: 0.88rem;
+        color: var(--text-brown);
+        line-height: 1.50;
+    }
+    .insights-body b {
+        color: var(--text-brown);
+    }
+
+    .warning-banner {
+        background: var(--soft-butter);
+        border-radius: 12px;
+        border: 1px solid rgba(255, 179, 102, 0.5);
+        border-left: 4px solid var(--peach-glow);
+        padding: 12px 16px;
+        margin-bottom: 14px;
+        color: var(--text-brown);
+        font-size: 0.84rem;
+        line-height: 1.45;
+    }
+
+    /* ---------------- COMPACT, UNIFORM NAVIGATION BUTTONS ---------------- */
+    /* Primary Buttons (Sunlit Green: Active / Highlights) */
+    button[kind="primary"] {
+        background: var(--sunlit-green) !important;
+        color: #FFFFFF !important;
+        border-radius: 12px !important;
+        box-shadow: 2px 2px 6px rgba(163, 180, 84, 0.25) !important;
+        border: 1px solid rgba(163, 180, 84, 0.4) !important;
+        font-weight: 700 !important;
+        font-size: 0.82rem !important;
+        padding: 6px 12px !important;
+        min-height: 38px !important;
+        height: 38px !important;
+        transition: all 0.15s ease !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+    }
+    button[kind="primary"]:hover {
+        background: #92A345 !important;
+        transform: translateY(-1px) !important;
+        box-shadow: 3px 3px 8px rgba(163, 180, 84, 0.35) !important;
+    }
+
+    /* Secondary Buttons (Warm Cream / Soft Butter: Inactive / Navigation) */
+    button[kind="secondary"] {
+        background: var(--card-white) !important;
+        color: var(--text-brown) !important;
+        border-radius: 12px !important;
+        box-shadow: 2px 2px 6px rgba(215, 180, 100, 0.12) !important;
+        border: 1px solid rgba(255, 213, 79, 0.5) !important;
+        font-weight: 700 !important;
+        font-size: 0.82rem !important;
+        padding: 6px 12px !important;
+        min-height: 38px !important;
+        height: 38px !important;
+        transition: all 0.15s ease !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+    }
+    button[kind="secondary"]:hover {
+        background: var(--soft-butter) !important;
+        border-color: var(--sunshine-yellow) !important;
+        transform: translateY(-1px) !important;
+        color: var(--text-brown) !important;
+    }
+
+    /* Dataframe Table Container */
+    [data-testid="stDataFrame"] {
+        background: var(--card-white) !important;
+        border-radius: 14px !important;
+        box-shadow: 2px 2px 10px var(--card-shadow) !important;
+        border: 1px solid rgba(255, 213, 79, 0.4) !important;
+        overflow: hidden !important;
+    }
+
+    /* ---------------- SMARTPHONE RESPONSIVENESS OVERRIDES ---------------- */
+    @media (max-width: 768px) {
+        .block-container {
+            padding-left: 0.75rem !important;
+            padding-right: 0.75rem !important;
+            padding-top: 0.75rem !important;
+        }
+        .hero-banner {
+            padding: 14px 16px !important;
+            border-radius: 14px !important;
+        }
+        .hero-title {
+            font-size: 1.55rem !important;
+            gap: 6px !important;
+        }
+        .hero-subtitle {
+            font-size: 0.82rem !important;
+        }
+        /* Mobile Equal-Sized KPI Stacking */
+        .kpi-card-rect {
+            padding: 12px 14px !important;
+            height: 125px !important;
+            margin-bottom: 10px !important;
+            border-radius: 14px !important;
+        }
+        .kpi-value-rect {
+            font-size: 1.65rem !important;
+        }
+        .kpi-value-rect .unit-text {
+            font-size: 0.84rem !important;
+        }
+        .growth-kpi-card {
+            height: 85px !important;
+            padding: 10px 12px !important;
+        }
+        .growth-kpi-val {
+            font-size: 1.45rem !important;
+        }
+        /* Single-Column Stack on Mobile */
+        [data-testid="column"] {
+            min-width: 100% !important;
+            flex: 1 1 100% !important;
+            margin-bottom: 6px !important;
+        }
+        /* Touch Friendly Buttons */
+        button[kind="primary"], button[kind="secondary"] {
+            min-height: 40px !important;
+            height: 40px !important;
+            font-size: 0.82rem !important;
+        }
+    }
+
+    /* Footer */
+    .dashboard-footer {
+        text-align: center;
+        background: var(--card-white);
+        border-radius: 14px;
+        box-shadow: 2px 2px 10px var(--card-shadow);
+        border: 1px solid rgba(255, 213, 79, 0.4);
+        color: var(--text-brown);
+        padding: 14px 18px;
+        margin-top: 26px;
+        font-size: 0.80rem;
+    }
+    .dashboard-footer strong {
+        color: var(--text-brown);
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
+# -----------------------------------------------------------------------------
+# 2. DATA INGESTION & CACHING (PRESERVED 100%)
+# -----------------------------------------------------------------------------
+@st.cache_data
+def load_dataset():
+    """Loads and standardizes the cleaned dataset."""
+    possible_paths = [
+        "outputs/cleaned_banana_data.csv",
+        "cleaned_banana_data.csv",
+        "data/cleaned_banana_data.csv"
+    ]
+    for path in possible_paths:
+        if os.path.exists(path):
+            df = pd.read_csv(path)
+            df['Year'] = df['Year'].astype(int)
+            df['Volume_MT'] = pd.to_numeric(df['Volume_MT'], errors='coerce')
+            return df
+            
+    st.error("Cleaned dataset not found! Please run `src/data_cleaning.py` first.")
+    st.stop()
+
+df = load_dataset()
+
+
+# -----------------------------------------------------------------------------
+# 3. SIDEBAR CONTROLS & INTERACTIVE FILTERS (PRESERVED 100% FUNCTIONALITY)
+# -----------------------------------------------------------------------------
+with st.sidebar:
+    st.markdown("""
+    <div class="sidebar-brand-box">
+        <div class="sidebar-brand-title">
+            <span>🍌</span> BananaScope PH
+        </div>
+        <div class="sidebar-brand-subtitle">
+            Philippine Banana Production Analytics Platform (2010–2026)
+        </div>
+        <span class="sidebar-tag">🇵🇭 DepEd MIMAROPA • Grade 12</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("### 🎛️ **Surveillance Filters**")
+    st.caption("Multi-attribute agricultural surveillance filters.")
+
+    # 1. Year Range Filter (PRESERVED)
+    min_year = int(df['Year'].min())
+    max_year = int(df['Year'].max())
+    selected_years = st.slider(
+        "📅 **Select Year Horizon:**",
+        min_value=min_year,
+        max_value=max_year,
+        value=(2010, min(2024, max_year)),
+        step=1
+    )
+
+    # 2. Measurement Frequency (PRESERVED)
+    period_options = ["Annual (Recommended)", "Quarterly (Q1–Q4)", "Semester (S1–S2)"]
+    selected_period_type = st.radio(
+        "⏱️ **Reporting Frequency:**",
+        options=period_options,
+        index=0,
+        help="Annual totals prevent double-counting. Choose Quarterly to inspect intra-annual cycles."
+    )
+
+    quarter_filter = "All"
+    if selected_period_type == "Quarterly (Q1–Q4)":
+        quarter_filter = st.selectbox("Select Specific Quarter:", ["All", "Q1", "Q2", "Q3", "Q4"])
+
+    st.markdown("---")
+
+    # 3. Banana Variety Scope (PRESERVED)
+    all_varieties = sorted(df['Crop'].unique().tolist())
+    variety_mode = st.radio(
+        "🍌 **Cultivar Scope:**",
+        ["Total Banana (Aggregated)", "Specific Cultivars Breakdown", "Custom Selection"],
+        index=0
+    )
+
+    if variety_mode == "Total Banana (Aggregated)":
+        selected_varieties = ["Banana (Total)"]
+    elif variety_mode == "Specific Cultivars Breakdown":
+        selected_varieties = [v for v in all_varieties if v != "Banana (Total)"]
+    else:
+        selected_varieties = st.multiselect(
+            "Select Banana Varieties:",
+            options=all_varieties,
+            default=["Banana (Total)"]
+        )
+        if not selected_varieties:
+            selected_varieties = ["Banana (Total)"]
+
+    st.markdown("---")
+
+    # 4. Regional Filter (PRESERVED)
+    available_regions = sorted(df[df['Hierarchy_Level'] == 'Regional']['Region'].unique().tolist())
+    all_regions_opt = "All Administrative Regions (National Scope)"
+    region_options = [all_regions_opt] + available_regions
+
+    selected_region = st.selectbox(
+        "🗺️ **Select Region:**",
+        options=region_options,
+        index=0
+    )
+
+    # 5. Cascading Provincial Filter (PRESERVED)
+    if selected_region == all_regions_opt:
+        available_provinces = sorted(df[df['Hierarchy_Level'].isin(['Provincial', 'City'])]['Province_City'].unique().tolist())
+    else:
+        available_provinces = sorted(df[(df['Region'] == selected_region) & 
+                                        (df['Hierarchy_Level'].isin(['Provincial', 'City']))]['Province_City'].unique().tolist())
+
+    all_prov_opt = "All Provinces / Cities"
+    province_options = [all_prov_opt] + available_provinces
+
+    selected_province = st.selectbox(
+        "📍 **Select Province / City:**",
+        options=province_options,
+        index=0
+    )
+
+    st.markdown("---")
+    st.markdown("""
+    <div style="background: var(--card-white); border-radius: 12px; padding: 10px 12px; border: 1px solid rgba(255, 213, 79, 0.4); font-size: 0.74rem; line-height: 1.40;">
+        <strong style="color: #3E2723;">🏫 Leuteboro National High School</strong><br>
+        Fundamentals of Data Analytics (2026–2027)<br>
+        Supervised by <strong style="color: #3E2723;">Sir Aldrin D. Magtibay</strong><br>
+        <em>DepEd Division of Oriental Mindoro</em>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# -----------------------------------------------------------------------------
+# 4. FILTERING LOGIC (PRESERVED 100%)
+# -----------------------------------------------------------------------------
+filtered_df = df[(df['Year'] >= selected_years[0]) & (df['Year'] <= selected_years[1])].copy()
+
+# Period Type Filter
+if selected_period_type == "Annual (Recommended)":
+    filtered_df = filtered_df[filtered_df['Period_Type'] == 'Annual'].copy()
+elif selected_period_type == "Quarterly (Q1–Q4)":
+    filtered_df = filtered_df[filtered_df['Period_Type'] == 'Quarterly'].copy()
+    if quarter_filter != "All":
+        filtered_df = filtered_df[filtered_df['Period'] == quarter_filter].copy()
+elif selected_period_type == "Semester (S1–S2)":
+    filtered_df = filtered_df[filtered_df['Period_Type'] == 'Semester'].copy()
+
+# Cultivar Filter
+filtered_df = filtered_df[filtered_df['Crop'].isin(selected_varieties)].copy()
+
+# Geographic Hierarchy Routing
+if selected_province != all_prov_opt:
+    active_df = filtered_df[filtered_df['Province_City'] == selected_province].copy()
+    geo_label = selected_province
+    geo_level = "Provincial"
+elif selected_region != all_regions_opt:
+    active_df = filtered_df[(filtered_df['Region'] == selected_region) & 
+                            (filtered_df['Hierarchy_Level'] == 'Regional')].copy()
+    geo_label = selected_region
+    geo_level = "Regional"
+else:
+    active_df = filtered_df[filtered_df['Hierarchy_Level'] == 'National'].copy()
+    geo_label = "Philippines (National Aggregate)"
+    geo_level = "National"
+
+
+# -----------------------------------------------------------------------------
+# 5. SUMMARY CALCULATIONS FOR KPI SUMMARY (PRESERVED CALCULATIONS)
+# -----------------------------------------------------------------------------
+valid_vols = active_df['Volume_MT'].dropna()
+total_production_mt = valid_vols.sum()
+
+if not active_df.empty and active_df['Year'].nunique() > 0:
+    yearly_totals = active_df.groupby('Year')['Volume_MT'].sum()
+    avg_annual_mt = yearly_totals.mean()
+    if not yearly_totals.empty:
+        peak_year = int(yearly_totals.idxmax())
+        peak_vol_mt = yearly_totals.max()
+        lowest_year = int(yearly_totals.idxmin())
+        lowest_vol_mt = yearly_totals.min()
+    else:
+        peak_year, peak_vol_mt, lowest_year, lowest_vol_mt = "N/A", 0, "N/A", 0
+else:
+    avg_annual_mt = 0
+    peak_year, peak_vol_mt, lowest_year, lowest_vol_mt = "N/A", 0, "N/A", 0
+
+# Benchmark Top Producing Region across selected period (PRESERVED)
+reg_benchmark = df[
+    (df['Year'] >= selected_years[0]) & 
+    (df['Year'] <= selected_years[1]) & 
+    (df['Hierarchy_Level'] == 'Regional') &
+    (df['Crop'].isin(selected_varieties)) &
+    (df['Period_Type'] == ('Annual' if selected_period_type == "Annual (Recommended)" else 'Quarterly'))
+]
+if not reg_benchmark.empty:
+    top_reg_series = reg_benchmark.groupby('Region')['Volume_MT'].sum()
+    top_region_name = top_reg_series.idxmax().replace("REGION ", "Reg ").replace("ADMINISTRATIVE REGION", "CAR")
+    top_region_vol = top_reg_series.max()
+else:
+    top_region_name, top_region_vol = "N/A", 0
+
+
+# -----------------------------------------------------------------------------
+# 6. PLOTLY PALETTE & VISUAL HELPERS
+# -----------------------------------------------------------------------------
+PLOT_THEME = dict(
+    plot_bgcolor="#FFFDF6",
+    paper_bgcolor="#FFFDF6",
+    font=dict(family="'Plus Jakarta Sans', sans-serif", color="#3E2723"),
+    hoverlabel=dict(bgcolor="#3E2723", font_color="#FFF7E1", font_family="'Plus Jakarta Sans', sans-serif")
+)
+
+def render_explanation(chart_title, explanation_text):
+    """Renders a concise, beginner-friendly 2-sentence explanation card directly below each visual."""
+    st.markdown(f"""
+    <div class="chart-explanation">
+        <div class="chart-explanation-title">🌿 Understanding This Visual: {chart_title}</div>
+        <div class="chart-explanation-body">{explanation_text}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+def render_view_header(view_id):
+    """Renders Home, Back, and Next navigation controls with active section indicator."""
+    current_idx = next((i for i, s in enumerate(NAV_SECTIONS) if s["id"] == view_id), 0)
+    current_sec = NAV_SECTIONS[current_idx]
+    has_next = current_idx < len(NAV_SECTIONS) - 1
+    next_sec = NAV_SECTIONS[current_idx + 1] if has_next else None
+    has_prev = current_idx > 0
+    prev_sec = NAV_SECTIONS[current_idx - 1] if has_prev else None
+
+    # Section Status Bar
+    st.markdown(f"""
+    <div style="background: #FFFDF6; border-radius: 14px; border: 1px solid rgba(255, 213, 79, 0.4); border-left: 4px solid #A3B454; padding: 10px 16px; margin-bottom: 12px; box-shadow: 2px 2px 8px rgba(163, 180, 84, 0.10);">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.15rem;">{current_sec['icon']}</span>
+                <div>
+                    <div style="font-size: 0.72rem; font-weight: 800; color: #A3B454; text-transform: uppercase; letter-spacing: 0.5px;">
+                        Category: {current_sec['category']}
+                    </div>
+                    <div style="font-size: 1.05rem; font-weight: 700; color: #3E2723; font-family: Playfair Display, serif;">
+                        {current_sec['title']}
+                    </div>
+                </div>
+            </div>
+            <div style="background: #FFE8A1; border-radius: 10px; padding: 3px 10px; font-weight: 800; font-size: 0.76rem; color: #3E2723;">
+                Section {current_idx + 1} of {len(NAV_SECTIONS)}
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Navigation Controls (Home | Back | Next)
+    c_home, c_back, c_next = st.columns([1.2, 1.2, 1.8])
+    with c_home:
+        if st.button("🏠 Home", key=f"top_home_{view_id}", type="primary", use_container_width=True):
+            st.session_state.active_view = "HOME"
+            st.rerun()
+
+    with c_back:
+        if has_prev:
+            if st.button("⬅️ Back", key=f"top_back_{view_id}", type="secondary", use_container_width=True):
+                st.session_state.active_view = prev_sec["id"]
+                st.rerun()
+        else:
+            if st.button("⬅️ Back", key=f"top_back_home_{view_id}", type="secondary", use_container_width=True):
+                st.session_state.active_view = "HOME"
+                st.rerun()
+
+    with c_next:
+        if has_next:
+            if st.button(f"Next: {next_sec['short_title']} ➡️", key=f"top_next_{view_id}", type="primary", use_container_width=True):
+                st.session_state.active_view = next_sec["id"]
+                st.rerun()
+        else:
+            if st.button("🏠 Return to Home", key=f"top_next_home_{view_id}", type="primary", use_container_width=True):
+                st.session_state.active_view = "HOME"
+                st.rerun()
+
+def render_view_footer(view_id):
+    """Renders bottom Home, Back, and Next navigation controls."""
+    current_idx = next((i for i, s in enumerate(NAV_SECTIONS) if s["id"] == view_id), 0)
+    has_next = current_idx < len(NAV_SECTIONS) - 1
+    next_sec = NAV_SECTIONS[current_idx + 1] if has_next else None
+    has_prev = current_idx > 0
+    prev_sec = NAV_SECTIONS[current_idx - 1] if has_prev else None
+
+    st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
+    c_home, c_back, c_next = st.columns([1.2, 1.2, 1.8])
+    with c_home:
+        if st.button("🏠 Home", key=f"bot_home_{view_id}", type="secondary", use_container_width=True):
+            st.session_state.active_view = "HOME"
+            st.rerun()
+
+    with c_back:
+        if has_prev:
+            if st.button("⬅️ Back", key=f"bot_back_{view_id}", type="secondary", use_container_width=True):
+                st.session_state.active_view = prev_sec["id"]
+                st.rerun()
+        else:
+            if st.button("⬅️ Back to Home", key=f"bot_back_home_{view_id}", type="secondary", use_container_width=True):
+                st.session_state.active_view = "HOME"
+                st.rerun()
+
+    with c_next:
+        if has_next:
+            if st.button(f"Next: {next_sec['short_title']} ➡️", key=f"bot_next_{view_id}", type="primary", use_container_width=True):
+                st.session_state.active_view = next_sec["id"]
+                st.rerun()
+        else:
+            if st.button("🏠 Return to Home", key=f"bot_next_home_{view_id}", type="primary", use_container_width=True):
+                st.session_state.active_view = "HOME"
+                st.rerun()
+
+
+# =============================================================================
+# 7. REUSABLE CHART & TABLE VIEW FUNCTIONS (SINGLE-VIEW DISPLAY)
+# =============================================================================
+
+def render_annual_trajectory_view():
+    render_view_header("ANNUAL_TRAJECTORY")
+    st.markdown("<div style='font-family: Playfair Display, serif; font-size: 1.25rem; font-weight: 700; color: #3E2723; margin: 10px 0 8px 0;'>📈 Annual Banana Production (Metric Tons, 2010–2024)</div>", unsafe_allow_html=True)
+    if not active_df.empty:
+        annual_plot_data = active_df.groupby(['Year', 'Crop'])['Volume_MT'].sum().reset_index()
+        fig_traj = px.line(
+            annual_plot_data, x='Year', y='Volume_MT', color='Crop',
+            markers=True, line_shape='spline',
+            color_discrete_sequence=['#A3B454', '#FFD54F', '#FFB366', '#FFE8A1', '#3E2723', '#8D6E63'],
+            labels={'Volume_MT': 'Volume (Metric Tons)', 'Year': 'Calendar Year'}
+        )
+        fig_traj.update_layout(
+            **PLOT_THEME,
+            height=460,
+            hovermode="x unified",
+            margin=dict(l=55, r=25, t=40, b=40),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, bgcolor="rgba(255,253,246,0.9)")
+        )
+        fig_traj.update_traces(marker=dict(size=7, line=dict(color='#FFFDF6', width=1.5)))
+        fig_traj.update_yaxes(gridcolor='#F0E5C9', tickformat=",.0f", title_standoff=8)
+        fig_traj.update_xaxes(gridcolor='#F0E5C9', dtick=1, title_standoff=8)
+        st.plotly_chart(fig_traj, use_container_width=True)
+        render_explanation(
+            "Annual Banana Production Trajectory",
+            "This line chart tracks the multi-year volume of bananas harvested across the selected geographic scope from 2010 to 2024. "
+            "It shows steady national growth toward the 2018 peak of 9.36 million metric tons, followed by a multi-year contraction."
+        )
+    else:
+        st.warning("No data available for the current filter selection.")
+    render_view_footer("ANNUAL_TRAJECTORY")
+
+def render_quarterly_seasonality_view():
+    render_view_header("QUARTERLY_SEASONALITY")
+    st.markdown("<div style='font-family: Playfair Display, serif; font-size: 1.25rem; font-weight: 700; color: #3E2723; margin: 10px 0 8px 0;'>⏱️ Seasonal Quarterly Harvest Patterns (Q1–Q4 Average Volume)</div>", unsafe_allow_html=True)
+    q_subset = df[(df['Year'] >= selected_years[0]) & (df['Year'] <= selected_years[1]) & (df['Period_Type'] == 'Quarterly') & (df['Crop'].isin(selected_varieties))]
+    if selected_province != all_prov_opt:
+        q_subset = q_subset[q_subset['Province_City'] == selected_province]
+    elif selected_region != all_regions_opt:
+        q_subset = q_subset[(q_subset['Region'] == selected_region) & (q_subset['Hierarchy_Level'] == 'Regional')]
+    else:
+        q_subset = q_subset[q_subset['Hierarchy_Level'] == 'National']
+
+    if not q_subset.empty:
+        q_agg = q_subset.groupby('Period')['Volume_MT'].mean().reindex(['Q1', 'Q2', 'Q3', 'Q4']).reset_index()
+        labels_txt = [f"{v/1e6:.2f}M MT" if v >= 1e6 else f"{v/1e3:,.0f}K MT" for v in q_agg['Volume_MT']]
+        fig_q = px.bar(
+            q_agg, x='Period', y='Volume_MT', color='Period',
+            color_discrete_sequence=['#FFD54F', '#A3B454', '#FFB366', '#3E2723'],
+            labels={'Volume_MT': 'Average Harvest (Metric Tons)', 'Period': 'Quarter'},
+            text=labels_txt
+        )
+        max_val = q_agg['Volume_MT'].max()
+        fig_q.update_traces(
+            marker_line_color='#3E2723', marker_line_width=0.8,
+            textposition='outside', cliponaxis=False,
+            textfont=dict(size=11, family="'Plus Jakarta Sans', sans-serif", color='#3E2723')
+        )
+        fig_q.update_layout(
+            **PLOT_THEME,
+            height=440,
+            showlegend=False,
+            margin=dict(l=55, r=25, t=40, b=40)
+        )
+        fig_q.update_yaxes(gridcolor='#F0E5C9', range=[0, max_val * 1.20], tickformat=",.0f")
+        fig_q.update_xaxes(gridcolor='#F0E5C9')
+        st.plotly_chart(fig_q, use_container_width=True)
+        render_explanation(
+            "Seasonal Quarterly Harvest Patterns",
+            "This bar chart compares average banana harvests across all four calendar quarters to highlight seasonal production rhythms. "
+            "Quarter 1 regularly experiences the lowest harvest volume of the year, while Quarters 2 through 4 sustain higher yields."
+        )
+    else:
+        st.warning("No quarterly records found for the current selection.")
+    render_view_footer("QUARTERLY_SEASONALITY")
+
+def render_regional_rankings_view():
+    render_view_header("REGIONAL_RANKINGS")
+    st.markdown("<div style='font-family: Playfair Display, serif; font-size: 1.25rem; font-weight: 700; color: #3E2723; margin: 10px 0 8px 0;'>🗺️ Regional Banana Production Comparison Across the Philippines</div>", unsafe_allow_html=True)
+    reg_data = df[
+        (df['Year'] >= selected_years[0]) & (df['Year'] <= selected_years[1]) & 
+        (df['Hierarchy_Level'] == 'Regional') & 
+        (df['Period_Type'] == ('Annual' if selected_period_type == "Annual (Recommended)" else 'Quarterly')) &
+        (df['Crop'].isin(selected_varieties))
+    ].groupby('Region')['Volume_MT'].sum().reset_index().sort_values('Volume_MT', ascending=True)
+
+    if not reg_data.empty:
+        reg_data['Clean_Region'] = reg_data['Region'].str.replace(r'REGION [IVX]+ \((.*?)\)', r'\1', regex=True)
+        bar_labels = [f"{v/1e6:.2f}M MT" if v >= 1e6 else f"{v/1e3:,.0f}K MT" for v in reg_data['Volume_MT']]
+        fig_reg = px.bar(
+            reg_data, x='Volume_MT', y='Clean_Region', orientation='h',
+            color='Volume_MT', color_continuous_scale=['#FFF7E1', '#FFE8A1', '#FFD54F', '#A3B454'],
+            labels={'Volume_MT': 'Total Production (Metric Tons)', 'Clean_Region': 'Administrative Region'},
+            text=bar_labels
+        )
+        max_reg = reg_data['Volume_MT'].max()
+        fig_reg.update_traces(
+            marker_line_color='#3E2723', marker_line_width=0.8,
+            textposition='outside', cliponaxis=False,
+            textfont=dict(size=10, family="'Plus Jakarta Sans', sans-serif")
+        )
+        fig_reg.update_layout(
+            **PLOT_THEME,
+            height=max(520, len(reg_data) * 30),
+            coloraxis_showscale=False,
+            margin=dict(l=145, r=60, t=30, b=30)
+        )
+        fig_reg.update_xaxes(gridcolor='#F0E5C9', range=[0, max_reg * 1.22], tickformat=",.0f")
+        fig_reg.update_yaxes(gridcolor='#F0E5C9')
+        st.plotly_chart(fig_reg, use_container_width=True)
+        render_explanation(
+            "Regional Banana Production Comparison",
+            "This horizontal ranking chart benchmarks total banana production across all 17 Philippine administrative regions. "
+            "It highlights heavy production concentration in Mindanao, led by Davao Region with over half of the national harvest."
+        )
+    else:
+        st.warning("No regional records found for current filters.")
+    render_view_footer("REGIONAL_RANKINGS")
+
+def render_cultivar_donut_view():
+    render_view_header("CULTIVAR_DONUT")
+    st.markdown("<div style='font-family: Playfair Display, serif; font-size: 1.25rem; font-weight: 700; color: #3E2723; margin: 10px 0 8px 0;'>🍌 Market Share Breakdown by Banana Variety</div>", unsafe_allow_html=True)
+    cult_df = df[
+        (df['Year'] >= selected_years[0]) & (df['Year'] <= selected_years[1]) & 
+        (df['Crop'] != 'Banana (Total)') & 
+        (df['Period_Type'] == ('Annual' if selected_period_type == "Annual (Recommended)" else 'Quarterly'))
+    ]
+    if selected_province != all_prov_opt:
+        cult_df = cult_df[cult_df['Province_City'] == selected_province]
+    elif selected_region != all_regions_opt:
+        cult_df = cult_df[(cult_df['Region'] == selected_region) & (cult_df['Hierarchy_Level'] == 'Regional')]
+    else:
+        cult_df = cult_df[cult_df['Hierarchy_Level'] == 'National']
+
+    if not cult_df.empty:
+        cult_agg = cult_df.groupby('Crop')['Volume_MT'].sum().reset_index()
+        cult_agg['Crop_Name'] = cult_agg['Crop'].str.replace('Banana ', '')
+        fig_donut = px.pie(
+            cult_agg, names='Crop_Name', values='Volume_MT', hole=0.48,
+            color_discrete_sequence=['#A3B454', '#FFD54F', '#FFB366', '#FFE8A1', '#3E2723', '#8D6E63']
+        )
+        fig_donut.update_traces(
+            marker=dict(line=dict(color='#FFFDF6', width=2)),
+            textposition='inside', textinfo='percent+label',
+            textfont=dict(size=12, color='#FFFFFF')
+        )
+        fig_donut.update_layout(
+            **PLOT_THEME,
+            height=440,
+            margin=dict(l=20, r=20, t=30, b=30),
+            legend=dict(orientation="h", yanchor="bottom", y=-0.16, xanchor="center", x=0.5)
+        )
+        st.plotly_chart(fig_donut, use_container_width=True)
+        render_explanation(
+            "Variety Market Share Breakdown",
+            "This donut chart displays the percentage share of each major banana cultivar in total recorded production. "
+            "Cavendish for commercial export and Saba for domestic consumption together account for approximately 80% of total output."
+        )
+    else:
+        st.warning("No cultivar records found for current selection.")
+    render_view_footer("CULTIVAR_DONUT")
+
+def render_variety_comparison_view():
+    render_view_header("VARIETY_COMPARISON")
+    st.markdown("<div style='font-family: Playfair Display, serif; font-size: 1.25rem; font-weight: 700; color: #3E2723; margin: 10px 0 8px 0;'>🌿 Multi-Year Harvest Trends by Banana Variety</div>", unsafe_allow_html=True)
+    multi_var_df = df[(df['Hierarchy_Level'] == 'National') & (df['Crop'] != 'Banana (Total)') & (df['Period_Type'] == 'Annual') & (df['Year'] <= selected_years[1]) & (df['Year'] >= selected_years[0])]
+    if not multi_var_df.empty:
+        fig_cult_growth = px.line(
+            multi_var_df, x='Year', y='Volume_MT', color='Crop',
+            markers=True, line_shape='spline',
+            color_discrete_sequence=['#A3B454', '#FFD54F', '#FFB366', '#3E2723', '#8D6E63'],
+            labels={'Volume_MT': 'Volume (Metric Tons)', 'Year': 'Calendar Year'}
+        )
+        fig_cult_growth.update_layout(
+            **PLOT_THEME,
+            height=460,
+            hovermode="x unified",
+            margin=dict(l=55, r=25, t=40, b=40),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, bgcolor="rgba(255,253,246,0.9)")
+        )
+        fig_cult_growth.update_traces(marker=dict(size=7, line=dict(color='#FFFDF6', width=1.5)))
+        fig_cult_growth.update_yaxes(gridcolor='#F0E5C9', tickformat=",.0f", title_standoff=8)
+        fig_cult_growth.update_xaxes(gridcolor='#F0E5C9', dtick=1, title_standoff=8)
+        st.plotly_chart(fig_cult_growth, use_container_width=True)
+        render_explanation(
+            "Multi-Year Harvest Trends by Variety",
+            "This multi-line chart tracks historical harvest trajectories for individual cultivars over the 15-year period. "
+            "It reveals significant contraction in Cavendish post-2018 due to Fusarium Wilt, while local staple varieties like Saba exhibited resilience."
+        )
+    else:
+        st.warning("No multi-variety records available for current selection.")
+    render_view_footer("VARIETY_COMPARISON")
+
+def render_yoy_growth_view():
+    render_view_header("YOY_GROWTH")
+    st.markdown("<div style='font-family: Playfair Display, serif; font-size: 1.25rem; font-weight: 700; color: #3E2723; margin: 10px 0 8px 0;'>📊 Annual Year-over-Year Percentage Growth (% Change)</div>", unsafe_allow_html=True)
+    if len(yearly_totals) >= 2:
+        yoy_base = pd.DataFrame({'Year': yearly_totals.index, 'Volume_MT': yearly_totals.values})
+        yoy_df = compute_yoy_growth(yoy_base)
+        yoy_clean = yoy_df.dropna(subset=['YoY_Growth_Pct']).copy()
+
+        # Growth Metrics Calculations (PRESERVED)
+        start_y = yearly_totals.index.min()
+        end_y = yearly_totals.index.max()
+        v_start = yearly_totals.loc[start_y]
+        v_end = yearly_totals.loc[end_y]
+        cagr_val = calculate_cagr(v_start, v_end, end_y - start_y)
+        mean_yoy = yoy_clean['YoY_Growth_Pct'].mean()
+        max_growth_row = yoy_clean.loc[yoy_clean['YoY_Growth_Pct'].idxmax()]
+        min_growth_row = yoy_clean.loc[yoy_clean['YoY_Growth_Pct'].idxmin()]
+
+        # 4 Uniform Clean Growth Metric Cards
+        g_c1, g_c2, g_c3, g_c4 = st.columns(4)
+        with g_c1:
+            st.markdown(f"""
+            <div class="growth-kpi-card" style="border-left-color: var(--sunlit-green);">
+                <div class="growth-kpi-label">CAGR (Annualized Rate)</div>
+                <div class="growth-kpi-val">{cagr_val:+.2f}% <span class="unit-text">/ yr</span></div>
+                <div class="growth-kpi-sub">Trajectory ({start_y}–{end_y})</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with g_c2:
+            st.markdown(f"""
+            <div class="growth-kpi-card" style="border-left-color: var(--sunshine-yellow);">
+                <div class="growth-kpi-label">Average YoY Growth</div>
+                <div class="growth-kpi-val">{mean_yoy:+.2f}%</div>
+                <div class="growth-kpi-sub">Mean annual change</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with g_c3:
+            st.markdown(f"""
+            <div class="growth-kpi-card" style="border-left-color: var(--sunlit-green);">
+                <div class="growth-kpi-label">Highest Growth Surge</div>
+                <div class="growth-kpi-val">{max_growth_row['YoY_Growth_Pct']:+.1f}%</div>
+                <div class="growth-kpi-sub">Recorded in year {int(max_growth_row['Year'])}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with g_c4:
+            st.markdown(f"""
+            <div class="growth-kpi-card" style="border-left-color: var(--peach-glow);">
+                <div class="growth-kpi-label">Deepest Contraction</div>
+                <div class="growth-kpi-val">{min_growth_row['YoY_Growth_Pct']:+.1f}%</div>
+                <div class="growth-kpi-sub">Recorded in year {int(min_growth_row['Year'])}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Simplified YoY Labels (1 decimal place)
+        yoy_clean['Growth_Color'] = np.where(yoy_clean['YoY_Growth_Pct'] >= 0, 'Expansion (+)', 'Contraction (-)')
+        yoy_clean['Display_Text'] = yoy_clean['YoY_Growth_Pct'].apply(lambda x: f"{x:+.1f}%")
+
+        min_pct = yoy_clean['YoY_Growth_Pct'].min()
+        max_pct = yoy_clean['YoY_Growth_Pct'].max()
+        y_lower = min(0, min_pct) * 1.35 if min_pct < 0 else -2
+        y_upper = max(0, max_pct) * 1.35 if max_pct > 0 else 5
+
+        fig_yoy = px.bar(
+            yoy_clean, x='Year', y='YoY_Growth_Pct', color='Growth_Color',
+            color_discrete_map={'Expansion (+)': '#A3B454', 'Contraction (-)': '#FFB366'},
+            labels={'YoY_Growth_Pct': 'Annual Growth Rate (%)', 'Year': 'Calendar Year'},
+            text='Display_Text'
+        )
+        fig_yoy.add_hline(y=0, line_dash="solid", line_color="#3E2723", line_width=1.2)
+        fig_yoy.update_traces(
+            textposition='outside', cliponaxis=False,
+            textfont=dict(size=11, family="'Plus Jakarta Sans', sans-serif", color='#3E2723'),
+            marker_line_color='#3E2723', marker_line_width=0.8
+        )
+        fig_yoy.update_layout(
+            **PLOT_THEME,
+            height=440,
+            bargap=0.28,
+            margin=dict(l=55, r=25, t=40, b=40),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        fig_yoy.update_yaxes(gridcolor='#F0E5C9', ticksuffix='%', range=[y_lower, y_upper], title_standoff=8)
+        fig_yoy.update_xaxes(gridcolor='#F0E5C9', dtick=1, title_standoff=8)
+        st.plotly_chart(fig_yoy, use_container_width=True)
+        render_explanation(
+            "Annual Year-over-Year Percentage Growth",
+            "This chart shows annual harvest expansion and contraction percentages relative to the preceding year. "
+            "Sunlit green bars indicate growth years, while peach bars highlight agricultural contractions such as the severe 2013 shock."
+        )
+    else:
+        st.warning("Insufficient data points to compute Year-over-Year growth rates. Expand the year horizon slider.")
+    render_view_footer("YOY_GROWTH")
+
+def render_moving_average_view():
+    render_view_header("MOVING_AVERAGE")
+    st.markdown("<div style='font-family: Playfair Display, serif; font-size: 1.25rem; font-weight: 700; color: #3E2723; margin: 10px 0 8px 0;'>🌾 Production Volume with 3-Year Rolling Average & Long-Term Trendline</div>", unsafe_allow_html=True)
+    if len(yearly_totals) >= 2:
+        yoy_base = pd.DataFrame({'Year': yearly_totals.index, 'Volume_MT': yearly_totals.values})
+        trend_df, t_stats = compute_trend_models(yoy_base)
+
+        fig_smooth = go.Figure()
+        fig_smooth.add_trace(go.Scatter(
+            x=trend_df['Year'], y=trend_df['Volume_MT'], mode='lines+markers',
+            name='Actual Annual Output', line=dict(color='#3E2723', width=2.8),
+            marker=dict(size=8, color='#3E2723', line=dict(color='#FFFDF6', width=1.5))
+        ))
+        fig_smooth.add_trace(go.Scatter(
+            x=trend_df['Year'], y=trend_df['SMA_3'], mode='lines',
+            name='3-Year Moving Average (SMA-3)', line=dict(color='#A3B454', width=2.5, dash='dot')
+        ))
+        fig_smooth.add_trace(go.Scatter(
+            x=trend_df['Year'], y=trend_df['Linear_Trend'], mode='lines',
+            name=f"OLS Linear Trend (R² = {t_stats['r_squared']:.2f})", line=dict(color='#FFB366', width=2.5, dash='dash')
+        ))
+        fig_smooth.update_layout(
+            **PLOT_THEME,
+            height=460,
+            hovermode="x unified",
+            margin=dict(l=55, r=25, t=40, b=40),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, bgcolor="rgba(255,253,246,0.9)")
+        )
+        fig_smooth.update_yaxes(gridcolor='#F0E5C9', tickformat=",.0f", title_standoff=8)
+        fig_smooth.update_xaxes(gridcolor='#F0E5C9', dtick=1, title_standoff=8)
+        st.plotly_chart(fig_smooth, use_container_width=True)
+        render_explanation(
+            "3-Year Moving Average & Long-Term Trendline",
+            "This chart combines actual annual production with a 3-year smoothed rolling average and an Ordinary Least Squares (OLS) linear trendline. "
+            "The smoothed series mitigates annual volatility to illustrate the true multi-year direction of Philippine banana output."
+        )
+    else:
+        st.warning("Insufficient data points to compute rolling moving averages.")
+    render_view_footer("MOVING_AVERAGE")
+
+def render_anomalies_scatter_view():
+    render_view_header("ANOMALIES_SCATTER")
+    st.markdown("<div style='font-family: Playfair Display, serif; font-size: 1.25rem; font-weight: 700; color: #3E2723; margin: 10px 0 8px 0;'>🔍 Statistical Detection of Extreme Harvests & Production Shocks (Z-Scores)</div>", unsafe_allow_html=True)
+    if len(yearly_totals) >= 4:
+        anom_base = pd.DataFrame({'Year': yearly_totals.index, 'Volume_MT': yearly_totals.values})
+        anom_df = detect_statistical_anomalies(anom_base, z_thresh=1.4)
+
+        anomaly_text = [str(y) if flag != 'Normal Production' else '' for y, flag in zip(anom_df['Year'], anom_df['Anomaly_Flag'])]
+
+        fig_anom = px.scatter(
+            anom_df, x='Year', y='Volume_MT', color='Anomaly_Flag',
+            size=np.abs(anom_df['Z_Score']) + 3.0,
+            color_discrete_map={
+                'Normal Production': '#A3B454',
+                'Unusually High Output': '#FFD54F',
+                'Unusually Low Shock': '#FFB366',
+                'Unrecorded': '#BCAAA4'
+            },
+            labels={'Volume_MT': 'Harvest Volume (Metric Tons)', 'Year': 'Calendar Year'},
+            text=anomaly_text
+        )
+        fig_anom.update_traces(
+            textposition='top center',
+            textfont=dict(size=12, family="'Plus Jakarta Sans', sans-serif", color='#3E2723'),
+            marker=dict(line=dict(color='#3E2723', width=1.2))
+        )
+        
+        v_mean = anom_base['Volume_MT'].mean()
+        v_std = anom_base['Volume_MT'].std()
+        fig_anom.add_hline(y=v_mean, line_color="#3E2723", line_width=1.8, annotation_text=f"Mean: {v_mean/1e3:.1f}K MT", annotation_position="top left")
+        fig_anom.add_hline(y=v_mean + 1.4 * v_std, line_dash="dot", line_color="#FFD54F", line_width=1.8, annotation_text="+1.4σ Upper Bound", annotation_position="top left")
+        fig_anom.add_hline(y=max(0, v_mean - 1.4 * v_std), line_dash="dot", line_color="#FFB366", line_width=1.8, annotation_text="-1.4σ Lower Bound", annotation_position="bottom left")
+
+        fig_anom.update_layout(
+            **PLOT_THEME,
+            height=460,
+            margin=dict(l=55, r=25, t=40, b=40),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        fig_anom.update_yaxes(gridcolor='#F0E5C9', tickformat=",.0f", title_standoff=8)
+        fig_anom.update_xaxes(gridcolor='#F0E5C9', dtick=1, title_standoff=8)
+        st.plotly_chart(fig_anom, use_container_width=True)
+        render_explanation(
+            "Statistical Anomaly & Shock Detection",
+            "This scatter plot uses standardized Z-scores to objectively identify harvest years that deviated significantly from the historical average. "
+            "Data points falling beyond the ±1.4σ threshold isolate major climatic shocks (e.g. Typhoon Nona) and exceptional agricultural boom years."
+        )
+    else:
+        st.info("At least 4 observation years are required to compute statistical Z-score bounds.")
+    render_view_footer("ANOMALIES_SCATTER")
+
+def render_anomalies_table_view():
+    render_view_header("ANOMALIES_TABLE")
+    st.markdown("<div style='font-family: Playfair Display, serif; font-size: 1.25rem; font-weight: 700; color: #3E2723; margin: 10px 0 8px 0;'>⚠️ Summary Table of Flagged Statistical Anomaly Years</div>", unsafe_allow_html=True)
+    if len(yearly_totals) >= 4:
+        anom_base = pd.DataFrame({'Year': yearly_totals.index, 'Volume_MT': yearly_totals.values})
+        anom_df = detect_statistical_anomalies(anom_base, z_thresh=1.4)
+        flagged_rows = anom_df[anom_df['Anomaly_Flag'] != 'Normal Production']
+        if not flagged_rows.empty:
+            display_flags = flagged_rows[['Year', 'Volume_MT', 'Z_Score', 'Anomaly_Flag']].copy()
+            st.dataframe(
+                display_flags.style.format({'Volume_MT': '{:,.2f}', 'Z_Score': '{:+.2f}'}),
+                use_container_width=True,
+                column_config={
+                    "Year": st.column_config.NumberColumn("Calendar Year", format="%d"),
+                    "Volume_MT": st.column_config.NumberColumn("Harvest Volume (Metric Tons)", format="%,.2f MT"),
+                    "Z_Score": st.column_config.NumberColumn("Standardized Z-Score", format="%+.2f"),
+                    "Anomaly_Flag": st.column_config.TextColumn("Statistical Classification")
+                }
+            )
+            render_explanation(
+                "Flagged Anomaly Summary Table",
+                "This audit table catalogs all calendar years classified as statistically unusual within the active filter scope. "
+                "It enables agricultural evaluators to cross-reference historical yields with verified typhoons, droughts, and disease outbreaks."
+            )
+        else:
+            st.success("All observed production years in this selection remain within standard statistical variance bounds (between -1.4σ and +1.4σ).")
+    else:
+        st.info("At least 4 observation years are required to compute statistical Z-score bounds.")
+    render_view_footer("ANOMALIES_TABLE")
+
+def render_forecasting_chart_view():
+    render_view_header("FORECAST_CHART")
+    st.markdown("<div style='font-family: Playfair Display, serif; font-size: 1.25rem; font-weight: 700; color: #3E2723; margin: 10px 0 8px 0;'>🔮 Exploratory Time-Series Production Forecast (Holt's Linear Smoothing)</div>", unsafe_allow_html=True)
+    st.markdown("""
+    <div class="warning-banner">
+        ⚠️ <b>Academic Disclaimer:</b> The projections below are <b>exploratory estimates</b> calculated using 
+        Holt's Linear Trend Model for research planning. They are statistical projections and should not be treated as certified future yields.
+    </div>
+    """, unsafe_allow_html=True)
+
+    fc_horizon = st.slider("Select Forecast Horizon (Years into future):", min_value=2, max_value=5, value=4)
+    fc_base = pd.DataFrame({'Year': yearly_totals.index, 'Volume_MT': yearly_totals.values})
+    
+    forecast_results = run_time_series_forecast(fc_base, train_ratio=0.8, forecast_horizon=fc_horizon)
+
+    if forecast_results is not None:
+        metrics = forecast_results['eval_metrics']
+        train_df = forecast_results['train_df']
+        test_df = forecast_results['test_df']
+        future_df = forecast_results['forecast_df']
+
+        f1, f2, f3 = st.columns(3)
+        with f1:
+            st.markdown(f"""
+            <div class="growth-kpi-card" style="border-left-color: var(--sunlit-green);">
+                <div class="growth-kpi-label">MAE (Mean Error)</div>
+                <div class="growth-kpi-val">{metrics['MAE_MT']/1e3:,.1f}K <span class="unit-text">MT</span></div>
+                <div class="growth-kpi-sub">Average error magnitude</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with f2:
+            st.markdown(f"""
+            <div class="growth-kpi-card" style="border-left-color: var(--sunshine-yellow);">
+                <div class="growth-kpi-label">RMSE (Std Error)</div>
+                <div class="growth-kpi-val">{metrics['RMSE_MT']/1e3:,.1f}K <span class="unit-text">MT</span></div>
+                <div class="growth-kpi-sub">Residual standard dev</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with f3:
+            st.markdown(f"""
+            <div class="growth-kpi-card" style="border-left-color: var(--peach-glow);">
+                <div class="growth-kpi-label">MAPE (Accuracy)</div>
+                <div class="growth-kpi-val">{metrics['MAPE_Pct']:.2f}%</div>
+                <div class="growth-kpi-sub">Test accuracy (< 10% is strong)</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.caption(f"🧪 **Validation Setup:** Trained on {metrics['Train_Years']} • Evaluated on held-out test data from {metrics['Test_Years']}.")
+
+        fig_fc = go.Figure()
+        fig_fc.add_trace(go.Scatter(
+            x=train_df['Year'], y=train_df['Volume_MT'],
+            mode='lines+markers', name='Historical Training Data',
+            line=dict(color='#3E2723', width=2.6), marker=dict(size=7, color='#3E2723')
+        ))
+        fig_fc.add_trace(go.Scatter(
+            x=test_df['Year'], y=test_df['Volume_MT'],
+            mode='lines+markers', name='Actual Test Data (Holdout)',
+            line=dict(color='#A3B454', width=2.6), marker=dict(size=8, symbol='diamond', color='#A3B454')
+        ))
+        fig_fc.add_trace(go.Scatter(
+            x=test_df['Year'], y=test_df['Predicted_MT'],
+            mode='lines+markers', name='Model Predictions',
+            line=dict(color='#FFB366', width=2, dash='dot'), marker=dict(size=7, symbol='cross', color='#FFB366')
+        ))
+        fig_fc.add_trace(go.Scatter(
+            x=future_df['Year'], y=future_df['Projected_MT'],
+            mode='lines+markers', name='Projected Estimate (Forecast)',
+            line=dict(color='#FFD54F', width=2.8, dash='dash'),
+            marker=dict(size=9, symbol='star', color='#FFD54F', line=dict(color='#3E2723', width=1.2))
+        ))
+        fig_fc.add_trace(go.Scatter(
+            x=list(future_df['Year']) + list(future_df['Year'])[::-1],
+            y=list(future_df['Upper_CI_MT']) + list(future_df['Lower_CI_MT'])[::-1],
+            fill='toself', fillcolor='rgba(255, 213, 79, 0.20)',
+            line=dict(color='rgba(255, 179, 102, 0.35)', width=1, dash='dot'),
+            hoverinfo="skip", showlegend=True, name='95% Confidence Interval'
+        ))
+        fig_fc.update_layout(
+            **PLOT_THEME,
+            height=480,
+            xaxis_title="Calendar Year",
+            yaxis_title="Volume of Production (Metric Tons)",
+            hovermode="x unified",
+            margin=dict(l=55, r=25, t=50, b=40),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, bgcolor="rgba(255,253,246,0.9)")
+        )
+        fig_fc.update_yaxes(gridcolor='#F0E5C9', tickformat=",.0f", title_standoff=8)
+        fig_fc.update_xaxes(gridcolor='#F0E5C9', dtick=1, title_standoff=8)
+        st.plotly_chart(fig_fc, use_container_width=True)
+        render_explanation(
+            "Exploratory Time-Series Production Forecast",
+            "This forecasting chart models future banana harvest volume using Holt's Linear Exponential Smoothing. "
+            "The shaded yellow-peach band represents the 95% confidence interval, illustrating the range of probable future outcomes."
+        )
+    else:
+        st.warning("Insufficient continuous historical observations to train the time-series model. Please expand your year selection.")
+    render_view_footer("FORECAST_CHART")
+
+def render_forecasting_table_view():
+    render_view_header("FORECAST_TABLE")
+    st.markdown("<div style='font-family: Playfair Display, serif; font-size: 1.25rem; font-weight: 700; color: #3E2723; margin: 10px 0 8px 0;'>📋 Projected Future Estimates (Exploratory Scenario Table)</div>", unsafe_allow_html=True)
+    fc_base = pd.DataFrame({'Year': yearly_totals.index, 'Volume_MT': yearly_totals.values})
+    forecast_results = run_time_series_forecast(fc_base, train_ratio=0.8, forecast_horizon=4)
+    if forecast_results is not None:
+        future_df = forecast_results['forecast_df']
+        st.dataframe(
+            future_df[['Year', 'Projected_MT', 'Lower_CI_MT', 'Upper_CI_MT', 'Type']].style.format({
+                'Projected_MT': '{:,.2f}',
+                'Lower_CI_MT': '{:,.2f}',
+                'Upper_CI_MT': '{:,.2f}'
+            }),
+            use_container_width=True,
+            column_config={
+                "Year": st.column_config.NumberColumn("Calendar Year", format="%d"),
+                "Projected_MT": st.column_config.NumberColumn("Projected Estimate (Metric Tons)", format="%,.2f MT"),
+                "Lower_CI_MT": st.column_config.NumberColumn("Lower 95% Confidence Bound (MT)", format="%,.2f MT"),
+                "Upper_CI_MT": st.column_config.NumberColumn("Upper 95% Confidence Bound (MT)", format="%,.2f MT"),
+                "Type": st.column_config.TextColumn("Projection Type")
+            }
+        )
+        render_explanation(
+            "Projected Scenario Table",
+            "This table outlines statistical projection estimates for upcoming calendar years alongside lower and upper 95% confidence bounds. "
+            "Agricultural planners can use these estimates to plan interventions, seed propagation, and cooperative resource allocation."
+        )
+    else:
+        st.warning("Insufficient historical data to generate scenario estimates table.")
+    render_view_footer("FORECAST_TABLE")
+
+def render_records_table_view():
+    render_view_header("RECORDS_TABLE")
+    st.markdown("<div style='font-family: Playfair Display, serif; font-size: 1.25rem; font-weight: 700; color: #3E2723; margin: 10px 0 8px 0;'>📑 Official Banana Production Records Explorer</div>", unsafe_allow_html=True)
+    table_display = active_df[['Year', 'Period', 'Crop', 'Region', 'Province_City', 'Volume_MT', 'Data_Status']].sort_values(by=['Year', 'Crop'], ascending=[False, True])
+    st.dataframe(
+        table_display.style.format({'Volume_MT': '{:,.2f}'}),
+        use_container_width=True,
+        height=400,
+        column_config={
+            "Year": st.column_config.NumberColumn("Calendar Year", format="%d", width="small"),
+            "Period": st.column_config.TextColumn("Reporting Period", width="small"),
+            "Crop": st.column_config.TextColumn("Banana Variety", width="medium"),
+            "Region": st.column_config.TextColumn("Administrative Region", width="large"),
+            "Province_City": st.column_config.TextColumn("Province / City", width="medium"),
+            "Volume_MT": st.column_config.NumberColumn("Volume (Metric Tons)", format="%,.2f MT", width="medium"),
+            "Data_Status": st.column_config.TextColumn("Data Audit Status", width="small")
+        }
+    )
+    render_explanation(
+        "Official Production Records Explorer",
+        "This interactive table presents verified PSA statistical records matching your active filter criteria. "
+        "Users can sort any column, search by variety or province, and download the filtered records directly as a spreadsheet."
+    )
+    csv_bytes = table_display.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        "📥 Download Filtered Records as CSV",
+        data=csv_bytes,
+        file_name=f"bananascope_filtered_{selected_years[0]}_{selected_years[1]}.csv",
+        mime="text/csv"
+    )
+    render_view_footer("RECORDS_TABLE")
+
+def render_math_methodology_view():
+    render_view_header("MATH_METHODOLOGY")
+    st.markdown("<div style='font-family: Playfair Display, serif; font-size: 1.25rem; font-weight: 700; color: #3E2723; margin: 10px 0 8px 0;'>📐 Mathematical Formulations & Statistical Methods</div>", unsafe_allow_html=True)
+    st.markdown("""
+    This section documents the formal mathematical and statistical formulas implemented in the **BananaScope PH Analytics Engine**:
+
+    ### 1. Year-over-Year (YoY) Growth Rate
+    $$\\Delta V_t = V_t - V_{t-1}, \\quad \\text{YoY Growth } (\\%) = \\left( \\frac{V_t - V_{t-1}}{V_{t-1}} \\right) \\times 100$$
+
+    ### 2. Compound Annual Growth Rate (CAGR)
+    $$\\text{CAGR} = \\left( \\frac{V_{\\text{end}}}{V_{\\text{start}}} \\right)^{\\frac{1}{n}} - 1$$
+
+    ### 3. Ordinary Least Squares (OLS) Linear Trend
+    $$\\hat{y}_t = \\beta_0 + \\beta_1 t, \\quad \\beta_1 = \\frac{\\sum_{i=1}^n (t_i - \\bar{t})(y_i - \\bar{y})}{\\sum_{i=1}^n (t_i - \\bar{t})^2}, \\quad R^2 = 1 - \\frac{\\sum (y_i - \\hat{y}_i)^2}{\\sum (y_i - \\bar{y})^2}$$
+
+    ### 4. Statistical Anomaly & Outlier Detection (Z-Score)
+    $$Z_t = \\frac{V_t - \\mu}{\\sigma} \\quad (\\text{Boom: } Z_t > +1.4, \\; \\text{Shock: } Z_t < -1.4)$$
+
+    ### 5. Double Exponential Smoothing (Holt's Linear Forecast)
+    $$\\ell_t = \\alpha y_t + (1 - \\alpha)(\\ell_{t-1} + b_{t-1}), \\quad b_t = \\beta (\\ell_t - \\ell_{t-1}) + (1 - \\beta) b_{t-1}, \\quad \\hat{y}_{t+h} = \\ell_t + h b_t$$
+    *Parameters:* Smoothing weight $\\alpha = 0.6$, Trend weight $\\beta = 0.2$.
+
+    ### 6. Forecast Accuracy Metrics
+    $$\\text{MAE} = \\frac{1}{n} \\sum |y_i - \\hat{y}_i|, \\quad \\text{RMSE} = \\sqrt{ \\frac{1}{n} \\sum (y_i - \\hat{y}_i)^2 }, \\quad \\text{MAPE} = \\frac{100\\%}{n} \\sum \\left| \\frac{y_i - \\hat{y}_i}{y_i} \\right|$$
+    """)
+    render_explanation(
+        "Mathematical Formulations & Statistical Methods",
+        "This section documents the formal mathematical equations powering BananaScope PH's calculations. "
+        "All growth, regression, anomaly detection, and exponential smoothing algorithms follow standard statistical methodologies."
+    )
+    render_view_footer("MATH_METHODOLOGY")
+
+
+# =============================================================================
+# 8. MAIN DASHBOARD VIEW (HOME: MINIMALIST OVERVIEW & COMPACT CATEGORIES)
+# =============================================================================
+
+if st.session_state.active_view == "HOME":
+    # 1. Minimalist Header Card
+    st.markdown("""
+    <div class="hero-banner">
+        <h1 class="hero-title">
+            <span>🍌</span> BananaScope PH
+        </h1>
+        <p class="hero-subtitle">
+            Philippine Banana Production Analytics Platform (2010–2026)
+        </p>
+        <div class="hero-badges-container">
+            <span class="hero-pill-badge">🌾 Official PSA OpenStat Data</span>
+            <span class="hero-pill-badge">🌿 15-Year Longitudinal Scope</span>
+            <span class="hero-pill-badge">🏛️ DepEd MIMAROPA Capstone</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 2. Concise Surveillance Summary Callout
+    if not active_df.empty and len(yearly_totals) > 1:
+        start_y = yearly_totals.index.min()
+        end_y = yearly_totals.index.max()
+        v_start = yearly_totals.loc[start_y]
+        v_end = yearly_totals.loc[end_y]
+        pct_change = ((v_end - v_start) / v_start) * 100 if v_start > 0 else 0
+        cagr_val = calculate_cagr(v_start, v_end, end_y - start_y)
+        dir_text = "net expansion" if pct_change >= 0 else "net contraction"
+        
+        st.markdown(f"""
+        <div class="insights-card">
+            <div class="insights-title">💡 Production Surveillance Overview: {geo_label}</div>
+            <div class="insights-body">
+                Between <b>{start_y}</b> and <b>{end_y}</b>, banana production in <b>{geo_label}</b> recorded a 
+                <b>{dir_text} of {abs(pct_change):.1f}%</b> (CAGR: <b>{cagr_val:+.2f}%/yr</b>). 
+                Peak production reached <b>{peak_vol_mt/1e3:,.1f}K MT in {peak_year}</b>, while lowest recorded volume was 
+                <b>{lowest_vol_mt/1e3:,.1f}K MT in {lowest_year}</b>.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # 3. STRICT 2 × 2 EQUAL-SIZED KPI CARDS (All 4 cards have exactly identical height & width)
+    row1_c1, row1_c2 = st.columns(2)
+    with row1_c1:
+        st.markdown(f"""
+        <div class="kpi-card-rect accent-green">
+            <div class="kpi-header">
+                <span class="kpi-label-rect">Total Production Volume</span>
+                <span class="kpi-icon-rect">🍌</span>
+            </div>
+            <div class="kpi-value-rect">{total_production_mt/1e6:.2f}M <span class="unit-text">MT</span></div>
+            <div class="kpi-subtext-rect">📍 Scope: {geo_label} ({total_production_mt:,.0f} MT)</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with row1_c2:
+        st.markdown(f"""
+        <div class="kpi-card-rect accent-yellow">
+            <div class="kpi-header">
+                <span class="kpi-label-rect">Average Annual Production</span>
+                <span class="kpi-icon-rect">⚖️</span>
+            </div>
+            <div class="kpi-value-rect">{avg_annual_mt/1e6:.2f}M <span class="unit-text">MT / yr</span></div>
+            <div class="kpi-subtext-rect">📅 Average across {selected_years[1] - selected_years[0] + 1} years ({selected_years[0]}–{selected_years[1]})</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    row2_c1, row2_c2 = st.columns(2)
+    with row2_c1:
+        st.markdown(f"""
+        <div class="kpi-card-rect accent-peach">
+            <div class="kpi-header">
+                <span class="kpi-label-rect">Peak Harvest Year</span>
+                <span class="kpi-icon-rect">🏆</span>
+            </div>
+            <div class="kpi-value-rect">{peak_year}</div>
+            <div class="kpi-subtext-rect">📈 Peak: {peak_vol_mt/1e6:.2f}M MT (Lowest: {lowest_vol_mt/1e6:.2f}M in {lowest_year})</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with row2_c2:
+        st.markdown(f"""
+        <div class="kpi-card-rect accent-butter">
+            <div class="kpi-header">
+                <span class="kpi-label-rect">Leading Banana Region</span>
+                <span class="kpi-icon-rect">🗺️</span>
+            </div>
+            <div class="kpi-value-rect" style="font-size: 1.70rem;">{top_region_name}</div>
+            <div class="kpi-subtext-rect">🌾 Output: {top_region_vol/1e6:.2f}M MT (54% National Share)</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # 4. COMPACT & ALIGNED ANALYTICS NAVIGATION HUB
+    st.markdown("""
+    <div style="background: var(--card-white); border-radius: 14px; border: 1px solid rgba(255, 213, 79, 0.4); border-left: 4px solid var(--sunlit-green); padding: 10px 16px; margin: 12px 0 10px 0; box-shadow: 2px 2px 8px rgba(163, 180, 84, 0.10);">
+        <div style="font-size: 0.90rem; font-weight: 800; color: #3E2723; display: flex; align-items: center; gap: 6px;">
+            <span>🧭</span> Analytics Navigation Menu
+        </div>
+        <div style="font-size: 0.78rem; color: #6D5545; margin-top: 2px;">
+            Select any section below to open it in a dedicated single-view screen equipped with Home, Back, and Next buttons.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Category 1: Production Overview & Seasonality
+    st.markdown("""
+    <div class="category-group-card">
+        <div class="category-group-header">
+            <span>📈</span> 1. Production Overview & Seasonality
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("📈 Annual Production Trajectory", key="home_btn_annual", type="primary", use_container_width=True):
+            st.session_state.active_view = "ANNUAL_TRAJECTORY"
+            st.rerun()
+    with c2:
+        if st.button("⏱️ Quarterly Harvest Patterns", key="home_btn_quarterly", type="secondary", use_container_width=True):
+            st.session_state.active_view = "QUARTERLY_SEASONALITY"
+            st.rerun()
+
+    # Category 2: Regional & Geographic Rankings
+    st.markdown("""
+    <div class="category-group-card" style="margin-top: 8px;">
+        <div class="category-group-header">
+            <span>🗺️</span> 2. Regional & Geographic Rankings
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    c3, _ = st.columns([1, 1])
+    with c3:
+        if st.button("🗺️ Regional Production Comparison", key="home_btn_regional", type="primary", use_container_width=True):
+            st.session_state.active_view = "REGIONAL_RANKINGS"
+            st.rerun()
+
+    # Category 3: Banana Variety Analysis
+    st.markdown("""
+    <div class="category-group-card" style="margin-top: 8px;">
+        <div class="category-group-header">
+            <span>🍌</span> 3. Banana Variety Analysis
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    c4, c5 = st.columns(2)
+    with c4:
+        if st.button("🍌 Variety Market Share", key="home_btn_cultivar", type="primary", use_container_width=True):
+            st.session_state.active_view = "CULTIVAR_DONUT"
+            st.rerun()
+    with c5:
+        if st.button("🌿 Variety Multi-Year Trends", key="home_btn_variety_trends", type="secondary", use_container_width=True):
+            st.session_state.active_view = "VARIETY_COMPARISON"
+            st.rerun()
+
+    # Category 4: Growth Rates, Trendlines & Forecasting
+    st.markdown("""
+    <div class="category-group-card" style="margin-top: 8px;">
+        <div class="category-group-header">
+            <span>📊</span> 4. Growth Rates, Trendlines & Forecasting
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    c6, c7, c8, c9 = st.columns(4)
+    with c6:
+        if st.button("📊 YoY % Growth", key="home_btn_yoy", type="primary", use_container_width=True):
+            st.session_state.active_view = "YOY_GROWTH"
+            st.rerun()
+    with c7:
+        if st.button("🌾 3-Yr Trendline", key="home_btn_smooth", type="secondary", use_container_width=True):
+            st.session_state.active_view = "MOVING_AVERAGE"
+            st.rerun()
+    with c8:
+        if st.button("🔍 Anomaly Shocks", key="home_btn_anom_scatter", type="secondary", use_container_width=True):
+            st.session_state.active_view = "ANOMALIES_SCATTER"
+            st.rerun()
+    with c9:
+        if st.button("🔮 Future Forecast", key="home_btn_fc_chart", type="primary", use_container_width=True):
+            st.session_state.active_view = "FORECAST_CHART"
+            st.rerun()
+
+    # Category 5: Structured Tables & Methodology
+    st.markdown("""
+    <div class="category-group-card" style="margin-top: 8px;">
+        <div class="category-group-header">
+            <span>📑</span> 5. Structured Tables & Methodology
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    c10, c11, c12, c13 = st.columns(4)
+    with c10:
+        if st.button("📋 Forecast Table", key="home_btn_fc_table", type="secondary", use_container_width=True):
+            st.session_state.active_view = "FORECAST_TABLE"
+            st.rerun()
+    with c11:
+        if st.button("⚠️ Anomaly Table", key="home_btn_anom_table", type="secondary", use_container_width=True):
+            st.session_state.active_view = "ANOMALIES_TABLE"
+            st.rerun()
+    with c12:
+        if st.button("📑 Records Explorer", key="home_btn_records", type="primary", use_container_width=True):
+            st.session_state.active_view = "RECORDS_TABLE"
+            st.rerun()
+    with c13:
+        if st.button("📐 Methodology", key="home_btn_math", type="secondary", use_container_width=True):
+            st.session_state.active_view = "MATH_METHODOLOGY"
+            st.rerun()
+
+
+# =============================================================================
+# 9. VIEW ROUTER (DISPATCHES ONLY THE ACTIVE SINGLE VIEW)
+# =============================================================================
+elif st.session_state.active_view == "ANNUAL_TRAJECTORY":
+    render_annual_trajectory_view()
+
+elif st.session_state.active_view == "QUARTERLY_SEASONALITY":
+    render_quarterly_seasonality_view()
+
+elif st.session_state.active_view == "REGIONAL_RANKINGS":
+    render_regional_rankings_view()
+
+elif st.session_state.active_view == "CULTIVAR_DONUT":
+    render_cultivar_donut_view()
+
+elif st.session_state.active_view == "VARIETY_COMPARISON":
+    render_variety_comparison_view()
+
+elif st.session_state.active_view == "YOY_GROWTH":
+    render_yoy_growth_view()
+
+elif st.session_state.active_view == "MOVING_AVERAGE":
+    render_moving_average_view()
+
+elif st.session_state.active_view == "ANOMALIES_SCATTER":
+    render_anomalies_scatter_view()
+
+elif st.session_state.active_view == "FORECAST_CHART":
+    render_forecasting_chart_view()
+
+elif st.session_state.active_view == "FORECAST_TABLE":
+    render_forecasting_table_view()
+
+elif st.session_state.active_view == "ANOMALIES_TABLE":
+    render_anomalies_table_view()
+
+elif st.session_state.active_view == "RECORDS_TABLE":
+    render_records_table_view()
+
+elif st.session_state.active_view == "MATH_METHODOLOGY":
+    render_math_methodology_view()
+
+else:
+    st.session_state.active_view = "HOME"
+    st.rerun()
+
+
+# -----------------------------------------------------------------------------
+# 10. DASHBOARD FOOTER
+# -----------------------------------------------------------------------------
+st.markdown("""
+<div class="dashboard-footer">
+    🍌 <strong>BananaScope PH</strong> • Philippine Banana Production Analytics (2010–2026)<br>
+    Senior High School Capstone Project • <strong>Leuteboro National High School</strong> (Socorro, Oriental Mindoro)<br>
+    Research Team: <strong>Krishia Mae R. Layag</strong>, <strong>Ann Ehra V. Avelino</strong>, and <strong>Hannah Aeshell V. Perez</strong><br>
+    Supervised by <strong>Sir Aldrin D. Magtibay, Teacher V</strong> • Department of Education MIMAROPA
+</div>
+""", unsafe_allow_html=True)
